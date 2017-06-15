@@ -108,6 +108,27 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 static int build_ikev2_version(void);
 
+
+static int ikev2_out_hash_v2n(u_int8_t np,  struct msg_digest *md)
+{
+		chunk_t memorysize;
+		uint16_t initialpos = IKEv2_NOTIFY_HMAC_RESERVED;
+		uint16_t  *size=alloc_bytes((sizeof(initialpos)*IKEv2_NOTIFY_HMAC_SHA2_512),"allocatingsize");
+		memorysize.ptr=(unsigned char*)size;
+		memorysize.len=0;
+
+		while(initialpos<=IKEv2_NOTIFY_HMAC_SHA2_512){
+		appendchunk(memorysize,initialpos);
+		initialpos++;
+		}
+                if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
+                                      PROTO_v2_RESERVED, &empty_chunk,
+                                      v2N_SIGNATURE_HASH_ALGORITHMS,&memorysize,
+					&md->rbody))
+		return 0;
+		return 1;
+}
+
 void ikev2_isakamp_established(struct state *st, const struct state_v2_microcode *svm,
 		enum state_kind new_state, enum original_role role)
 {
@@ -908,15 +929,15 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 	}
 
 	/* Send NAT-T Notify payloads */
-	 /*SAHANA: Next payload is changed here from ISAKMP_NEXT_v2V to ISAKMP_NEXT_v2N as the next payload type now is notify */
+	 /*SAHANA: Next payload is changed here from ISAKMP_NEXT_v2V to ISAKMP_NEXT_v2N as the next payload type now is a notify message again*/
 	{
 		int np = ISAKMP_NEXT_v2N;
-
+	/*Why are the below 4 lines needed here?*/
 		struct ikev2_generic in;
-
 		zero(&in);	/* OK: no pointer fields */
 		in.isag_np = np;
 		in.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
+
 		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
@@ -924,24 +945,15 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 	 /* SAHANA: Notify payload of type SIGNATURE_HASH_ALGORITHMS
          * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2)*/
          
-       // {
-        //        int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+       {
+                int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 
-           //     unsigned char buffer_hash_types[4] ={0};
-//		snprintf(buffer_hash_types,sizeof(buffer_hash_types),"%d%d%d%d",SHA1,SHA2_256,SHA2_384,SHA2_512);
-	//	buffer_hash_types[0]=SHA1;
-	//	buffer_hash_types[1]=SHA2_256;
-	//	buffer_hash_types[2]=SHA2_384;
-	//	buffer_hash_types[3]=SHA2_512;
-	//	chunk_t supported_hash_types = {buffer_hash_types,sizeof(buffer_hash_types)};
+	/* SAHANA Should we send all the 4 values by default or configuration specific??*/
 
-                /*if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
-                                      PROTO_v2_RESERVED, &empty_chunk,
-                                      v2N_SIGNATURE_HASH_ALGORITHMS,&supported_hash_types,
-                                      &md->rbody))
+		if (!ikev2_out_hash_v2n(np, md))
                                 return STF_INTERNAL_ERROR;
-*/
-       // }
+
+        }
 
 	/* From here on, only payloads left are Vendor IDs */
 	if (c->send_vendorid) {

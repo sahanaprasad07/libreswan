@@ -1646,11 +1646,11 @@ enum ipsec_comp_algo {
 /*SAHANA*/
 enum notify_payload_hash_algorithms {
 
-        RESERVED=0,
-        SHA1 =1,
-        SHA2_256 = 2,
-        SHA2_384 = 3,
-        SHA2_512 = 4,
+       IKEv2_NOTIFY_HMAC_RESERVED=0,      /* RFC 7427*/
+       IKEv2_NOTIFY_HMAC_SHA1 =1,		/* RFC 7427*/
+       IKEv2_NOTIFY_HMAC_SHA2_256 = 2,	/* RFC 7427*/
+       IKEv2_NOTIFY_HMAC_SHA2_384 = 3,	/* RFC 7427*/
+       IKEv2_NOTIFY_HMAC_SHA2_512 = 4,	/* RFC 7427*/
 };
 
 

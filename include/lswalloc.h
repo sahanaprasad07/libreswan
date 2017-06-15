@@ -127,6 +127,11 @@ typedef struct chunk chunk_t;
 #define same_chunk(a, b) \
 	((a).len == (b).len && memeq((a).ptr, (b).ptr, (b).len))
 
+#define appendchunk(ch,val) {\
+			*((uint16_t *)(ch.ptr+ch.len))=val; \
+			ch.len+=sizeof(val); \
+	}
+
 extern const chunk_t empty_chunk;
 
 typedef void (*exit_log_func_t)(const char *message, ...);
