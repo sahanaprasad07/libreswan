@@ -107,11 +107,11 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 					    struct state *st);
 
 static int build_ikev2_version(void);
-
+/* SAHANA */
 
 static int ikev2_out_hash_v2n(u_int8_t np,  struct msg_digest *md)
 {
-		chunk_t memorysize;
+	/*	chunk_t memorysize;
 		uint16_t initialpos = IKEv2_NOTIFY_HMAC_RESERVED;
 		uint16_t  *size=alloc_bytes((sizeof(initialpos)*IKEv2_NOTIFY_HMAC_SHA2_512),"allocatingsize");
 		memorysize.ptr=(unsigned char*)size;
@@ -121,11 +121,37 @@ static int ikev2_out_hash_v2n(u_int8_t np,  struct msg_digest *md)
 		appendchunk(memorysize,initialpos);
 		initialpos++;
 		}
-                if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
+               /* if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
                                       PROTO_v2_RESERVED, &empty_chunk,
                                       v2N_SIGNATURE_HASH_ALGORITHMS,&memorysize,
 					&md->rbody))
-		return 0;
+               
+		return 0;*/
+                
+                if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
+                                      PROTO_v2_RESERVED, &empty_chunk,
+                                      v2N_SIGNATURE_HASH_ALGORITHMS,&empty_chunk,
+					&md->rbody));
+                
+
+		switch(c->policy)
+                {
+		case POLICY_RSASIG:	
+		uint16_t hashtosend=IKEv2_HASH_ALGOS_SHA1;
+		out_raw((void *)&hashtosend,HASH_ALGO_OCTET_SIZE,&md->rbody,"hashalgo");                 
+		break;
+		/*
+ 		 *Add cases for other supported Digital Signature Algorithms here
+ 		 *For example if ECDSA is supported in future , consider adding a case for POLICY_ECDSA
+ 		 *Note that you might need to send multiple hash alrorithms.
+		 *For instance, for ECDSA you need to send IKEv2_HASH_ALGOS_SHA_256 ,  IKEv2_HASH_ALGOS_SHA_384 and IKEv2_HASH_ALGOS_SHA_512
+		 *Remember to change the length accordingly. For this case it would be 6 (HASH_ALGO_OCTET_SIZE*3) bytes.
+ 		 */
+		default:
+			libreswan_log("Invalid Signature Algorithm : %ld",
+                                c->policy); 
+		break;
+		}
 		return 1;
 }
 
@@ -550,7 +576,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 		return TRUE;
 	}
 
-	//SAHANA SAHANA
+	/*SAHANA*/
         case IKEv2_AUTH_DIGSIG:
         {
                 if (that_authby != AUTH_DIGSIG) {
@@ -929,10 +955,10 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 	}
 
 	/* Send NAT-T Notify payloads */
-	 /*SAHANA: Next payload is changed here from ISAKMP_NEXT_v2V to ISAKMP_NEXT_v2N as the next payload type now is a notify message again*/
+	/* SAHANA: Next payload is changed here from ISAKMP_NEXT_v2V to ISAKMP_NEXT_v2N as the next payload type now is a notify message again */
 	{
 		int np = ISAKMP_NEXT_v2N;
-	/*Why are the below 4 lines needed here?*/
+	/* Why are the below 4 lines needed here? */
 		struct ikev2_generic in;
 		zero(&in);	/* OK: no pointer fields */
 		in.isag_np = np;
@@ -943,13 +969,16 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 	}
 
 	 /* SAHANA: Notify payload of type SIGNATURE_HASH_ALGORITHMS
-         * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2)*/
+          * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2) 
+          * Please Note that you need to check WHEN the Hash algorithm Notfication has to be sent out. It needs to be sent out only when 
+          * authentication is done by Digital Signature algorithm like RSA, DSA, ECDSA etc. Currently we check only for POLICY_RSASIG.
+          * Remember to check for other algorithms too if implemented in future. For example if ECDSA is added in future, check for 
+          * POLICY_ECDSA also.
+          */
          
-       {
+        if (c->policy & POLICY_RSASIG) {  
+		
                 int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
-
-	/* SAHANA Should we send all the 4 values by default or configuration specific??*/
-
 		if (!ikev2_out_hash_v2n(np, md))
                                 return STF_INTERNAL_ERROR;
 

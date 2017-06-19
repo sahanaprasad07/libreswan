@@ -474,6 +474,11 @@
 #define IPSEC_DOI_SPI_OUR_MIN 0x1000
 
 
+
+/* RFC 7427 says that the size of every hash algorithm should be 16-bit. */
+#define HASH_ALGO_OCTET_SIZE 2
+
+
 /*
  * Payload types
  * RFC2408 Internet Security Association and Key Management Protocol (ISAKMP)
@@ -1642,15 +1647,16 @@ enum ipsec_comp_algo {
  * Section 7 :  IANA Considerations
  * Values 5-1023 are Unassigned.  Values 1024-65535 are reserved for
  * Private Use among mutually consenting parties.
+ * https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters.xhtml#hash-algorithms
  */
 /*SAHANA*/
 enum notify_payload_hash_algorithms {
 
-       IKEv2_NOTIFY_HMAC_RESERVED=0,      /* RFC 7427*/
-       IKEv2_NOTIFY_HMAC_SHA1 =1,		/* RFC 7427*/
-       IKEv2_NOTIFY_HMAC_SHA2_256 = 2,	/* RFC 7427*/
-       IKEv2_NOTIFY_HMAC_SHA2_384 = 3,	/* RFC 7427*/
-       IKEv2_NOTIFY_HMAC_SHA2_512 = 4,	/* RFC 7427*/
+       IKEv2_HASH_ALGO_RESERVED=0,      /* RFC 7427*/
+       IKEv2_HASH_ALGO_SHA1 =1,		/* RFC 7427*/
+       IKEv2_HASH_ALGO_SHA2_256 = 2,	/* RFC 7427*/
+       IKEv2_HASH_ALGO_SHA2_384 = 3,	/* RFC 7427*/
+       IKEv2_HASH_ALGO_SHA2_512 = 4,	/* RFC 7427*/
 };
 
 
