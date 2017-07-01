@@ -2776,7 +2776,6 @@ static stf_status ikev2_send_auth(struct connection *c,
 				loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 			return STF_FATAL;
 		}
-	        close_output_pbs(&a_pbs);
 		break;
 
 	case IKEv2_AUTH_PSK:
@@ -2788,22 +2787,22 @@ static stf_status ikev2_send_auth(struct connection *c,
 		break;
 	
 	case IKEv2_AUTH_DIGSIG:
-		if(authby==AUTH_RSASIG && (st->hash_negotiated & HASH_ALGO_SHA1)){
-			h.isah_length=SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE;
+		if(authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)){
+			//h.isah_length=SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE;
 			if (!out_struct(&h, &ikev2_hash_algo_desc, &a_pbs, &h_pbs))
 				return STF_INTERNAL_ERROR;
 			if (!out_raw(sha1WithRSAEncryption_oid_blob, SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &h_pbs,
-						"ASN.1 Object Payload"))
+						"ASN.1 Object Payload sahanaaaa"))
 				return STF_INTERNAL_ERROR;
-			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &h_pbs)) {
+	        close_output_pbs(&h_pbs);
+			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
 					loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 				return STF_FATAL;
 			}
 		}
-	        close_output_pbs(&h_pbs);
 		break;
 	}
-
+	        close_output_pbs(&a_pbs);
 	return STF_OK;
 }
 
