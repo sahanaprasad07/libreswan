@@ -543,7 +543,12 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 		   pb_stream *pbs,
 		   const enum keyword_authby that_authby)
 {
-
+    
+	    DBG(DBG_CONTROL,DBG_log("CHECK_AUTH"));
+	    DBG(DBG_CONTROL,DBG_log("CAME HERE CHECK AUTH"));
+	    DBG(DBG_CONTROL,DBG_log("ATYPE is %d",atype));
+    struct ikev2_hash_algo a;
+    unsigned char check_rsa_sha1_blob[SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE]={0x0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -606,6 +611,8 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
         
 	case IKEv2_AUTH_DIGSIG:
         {
+        
+	    DBG(DBG_CONTROL,DBG_log("Came here after DIGSIG"));
 	    /*
          * Right now it is only checked if authby = AUTH_RSASIG , in future else if conditions can be added
          * to check if authby= AUTH_ECDSA , if ECDSA is supported and implemented.
@@ -615,7 +622,15 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-
+        if(!in_struct(&a,&ikev2_hash_algo_desc,pbs,NULL))
+				return FALSE;
+	    DBG(DBG_CONTROL,DBG_log("Came here after in_struct"));
+	    DBG(DBG_CONTROL,DBG_log("Value of length is %d",a.isah_length));
+        if(!in_raw(check_rsa_sha1_blob,a.isah_length,pbs,"Storing the check_rsa_sha1_blob "))
+				return FALSE;
+	    DBG(DBG_CONTROL,DBG_log("Came here after in_raw"));
+        if(!memeq(check_rsa_sha1_blob,sha1WithRSAEncryption_oid_blob,a.isah_length))
+				return FALSE;
 		stf_status authstat = ikev2_verify_rsa_sha1(
 				st,
 				role,
@@ -2723,6 +2738,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 				  pb_stream *outpbs)
 {
 	struct ikev2_a a;
+	    DBG(DBG_CONTROL,DBG_log("SEND_AUTH"));
 	struct ikev2_hash_algo h;
 	pb_stream a_pbs, h_pbs;
 	struct state *pst = IS_CHILD_SA(st) ?
@@ -2788,7 +2804,6 @@ static stf_status ikev2_send_auth(struct connection *c,
 	
 	case IKEv2_AUTH_DIGSIG:
 		if(authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)){
-			//h.isah_length=SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE;
 			if (!out_struct(&h, &ikev2_hash_algo_desc, &a_pbs, &h_pbs))
 				return STF_INTERNAL_ERROR;
 			if (!out_raw(sha1WithRSAEncryption_oid_blob, SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &h_pbs,
@@ -3718,7 +3733,8 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 	enum keyword_authby that_authby = st->st_connection->spd.that.authby;
 
 	passert(that_authby != AUTH_NEVER && that_authby != AUTH_UNSET);
-
+    
+	    DBG_log("CHECK_AUTH");
 	if (!v2_check_auth(md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type,
 		st, ORIGINAL_RESPONDER, idhash_in, &md->chain[ISAKMP_NEXT_v2AUTH]->pbs,
 		st->st_connection->spd.that.authby))
@@ -4416,7 +4432,8 @@ stf_status ikev2parent_inR2(struct msg_digest *md)
 	}
 
 	/* process AUTH payload */
-
+    
+	    DBG_log("CHECK_AUTH");
 	if (!v2_check_auth(md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type,
 		pst, ORIGINAL_INITIATOR, idhash_in, &md->chain[ISAKMP_NEXT_v2AUTH]->pbs,
 		that_authby))
