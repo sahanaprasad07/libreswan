@@ -536,7 +536,7 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
  * Called by ikev2_parent_inI2outR2_tail() and ikev2parent_inR2()
  * Do the actual AUTH payload verification
  */
-static bool v2_check_auth(enum ikev3_auth_method atype,
+    static bool v2_check_auth(enum ikev2_auth_method atype,
 		   struct state *st,
 		   const enum original_role role,
 		   unsigned char idhash_in[MAX_DIGEST_LEN],
@@ -544,10 +544,10 @@ static bool v2_check_auth(enum ikev3_auth_method atype,
 		   const enum keyword_authby that_authby)
 {
     
+    struct ikev2_hash_algo a;pb_stream in_pbs; 
 	    DBG(DBG_CONTROL,DBG_log("CHECK_AUTH"));
 	    DBG(DBG_CONTROL,DBG_log("CAME HERE CHECK AUTH"));
 	    DBG(DBG_CONTROL,DBG_log("ATYPE is %d",atype));
-    struct ikev2_hash_algo a; pb_stream  in_pbs;
     unsigned char check_rsa_sha1_blob[SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE]={0x0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
@@ -622,7 +622,7 @@ static bool v2_check_auth(enum ikev3_auth_method atype,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-        if(!in_struct(&a,&ikev2_hash_algo_desc,pbs, &in_pbs))
+        if(!in_struct(&a,&ikev2_hash_algo_desc,pbs,&in_pbs))
 				return FALSE;
 	    DBG(DBG_CONTROL,DBG_log("Came here after in_struct"));
 	    DBG(DBG_CONTROL,DBG_log("Value of length is %d",a.isah_length));
