@@ -157,6 +157,7 @@ static void ikev2_hash_algo_from_notification(struct msg_digest *md)
         if (p->payload.v2n.isan_type == v2N_SIGNATURE_HASH_ALGORITHMS)
             break;
     }
+        /* Use in_struct , reset pbs by probably setting cur to zero , look for a function ?? */
     while(ind<(pbs_left(&p->pbs))) {
         /* 
          * Hash Algorithm Comparisons are made with each of the Hash algorithm that is implemented by libreswan 
@@ -626,10 +627,10 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 				return FALSE;
 	    DBG(DBG_CONTROL,DBG_log("Came here after in_struct"));
 	    DBG(DBG_CONTROL,DBG_log("Value of length is %d",a.isah_length));
-        if(!in_raw(check_rsa_sha1_blob,a.isah_length,&in_pbs,"Storing the check_rsa_sha1_blob "))
+        if(!in_raw(check_rsa_sha1_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &in_pbs,"Storing the check_rsa_sha1_blob "))
 				return FALSE;
 	    DBG(DBG_CONTROL,DBG_log("Came here after in_raw"));
-        if(!memeq(check_rsa_sha1_blob,sha1WithRSAEncryption_oid_blob,a.isah_length))
+        if(!memeq(check_rsa_sha1_blob,sha1WithRSAEncryption_oid_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE))
 				return FALSE;
 		stf_status authstat = ikev2_verify_rsa_sha1(
 				st,
@@ -1447,8 +1448,10 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 
 		if (seen_ntfy_frag)
 			st->st_seen_fragvid = TRUE;
-		if (seen_ntfy_hash)
+		if (seen_ntfy_hash) {
 			st->st_seen_hashnotify = TRUE;
+			ikev2_hash_algo_from_notification(md);
+		}
 	} else {
 		loglog(RC_LOG_SERIOUS, "Incoming non-duplicate packet already has state?");
 		pexpect(st == NULL); /* fire an expect so test cases see it clearly */
@@ -1973,7 +1976,6 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
 			st->st_seen_fragvid = TRUE;
                         break;
 		case v2N_SIGNATURE_HASH_ALGORITHMS:
-		
 			st->st_seen_hashnotify = TRUE;
 			ikev2_hash_algo_from_notification(md);
 			DBG(DBG_CONTROL, DBG_log("seen Hash in IKE response"));
@@ -2803,21 +2805,23 @@ static stf_status ikev2_send_auth(struct connection *c,
 		break;
 	
 	case IKEv2_AUTH_DIGSIG:
-		if(authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)){
+		if (authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)) {
 			if (!out_struct(&h, &ikev2_hash_algo_desc, &a_pbs, &h_pbs))
 				return STF_INTERNAL_ERROR;
 			if (!out_raw(sha1WithRSAEncryption_oid_blob, SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &h_pbs,
 						"ASN.1 Object Payload sahanaaaa"))
 				return STF_INTERNAL_ERROR;
-	        close_output_pbs(&h_pbs);
+            close_output_pbs(&h_pbs);
 			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
 					loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 				return STF_FATAL;
 			}
-		}
+		} else {
+            return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
+        }
 		break;
 	}
-	        close_output_pbs(&a_pbs);
+    close_output_pbs(&a_pbs);
 	return STF_OK;
 }
 
