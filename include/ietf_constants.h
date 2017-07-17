@@ -1662,7 +1662,7 @@ enum notify_payload_hash_algorithms {
 #define HASH_ALGO_OCTET_SIZE 2
 #define SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE 15
 static const unsigned char sha1WithRSAEncryption_oid_blob[SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE]={0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x05,0x05,0x00};
-
+static const uint8_t length_of_AlgorithIdentifier[1] = {SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE};
 /* Limits on size of RSA moduli.
  * The upper bound matches that of DNSSEC (see RFC 2537).
  * The lower bound must be more than 11 octets for certain

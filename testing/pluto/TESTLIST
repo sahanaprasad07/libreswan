@@ -763,6 +763,7 @@ kvmplutotest	interop-ikev1-strongswan-15-twofish		good
 kvmplutotest	interop-ikev1-strongswan-16-serpent		good
 kvmplutotest	interop-ikev2-strongswan-31-asymmetric-responder	good
 kvmplutotest	interop-ikev2-strongswan-32-ip-lease		wip
+kvmplutotest	interop-ikev2-strongswan-digsig-01  wip
 
 
 kvmplutotest    netkey-klips-pluto-03		good

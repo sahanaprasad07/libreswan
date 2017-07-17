@@ -545,11 +545,12 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 		   const enum keyword_authby that_authby)
 {
     
-    struct ikev2_hash_algo a;pb_stream in_pbs; 
+  //  struct ikev2_hash_algo a;pb_stream in_pbs; 
 	    DBG(DBG_CONTROL,DBG_log("CHECK_AUTH"));
 	    DBG(DBG_CONTROL,DBG_log("CAME HERE CHECK AUTH"));
 	    DBG(DBG_CONTROL,DBG_log("ATYPE is %d",atype));
     unsigned char check_rsa_sha1_blob[SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE]={0x0};
+    unsigned char check_length_rsa_sha1_blob[1]={0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -623,13 +624,16 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-        if(!in_struct(&a,&ikev2_hash_algo_desc,pbs,&in_pbs))
+        //if(!in_struct(&a,&ikev2_hash_algo_desc,pbs,&in_pbs))
+        if(!in_raw(check_length_rsa_sha1_blob,1, pbs,"Storing the length of the ASN.1 Algorith Identifier"))
 				return FALSE;
 	    DBG(DBG_CONTROL,DBG_log("Came here after in_struct"));
-	    DBG(DBG_CONTROL,DBG_log("Value of length is %d",a.isah_length));
-        if(!in_raw(check_rsa_sha1_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &in_pbs,"Storing the check_rsa_sha1_blob "))
+	    //DBG(DBG_CONTROL,DBG_log("Value of length is %d",a.isah_length));
+        if(!in_raw(check_rsa_sha1_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, pbs,"Storing the check_rsa_sha1_blob "))
 				return FALSE;
 	    DBG(DBG_CONTROL,DBG_log("Came here after in_raw"));
+        if(!memeq(check_length_rsa_sha1_blob,length_of_AlgorithIdentifier,1))
+				return FALSE;
         if(!memeq(check_rsa_sha1_blob,sha1WithRSAEncryption_oid_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE))
 				return FALSE;
 		stf_status authstat = ikev2_verify_rsa_sha1(
@@ -2741,8 +2745,9 @@ static stf_status ikev2_send_auth(struct connection *c,
 {
 	struct ikev2_a a;
 	    DBG(DBG_CONTROL,DBG_log("SEND_AUTH"));
-	struct ikev2_hash_algo h;
-	pb_stream a_pbs, h_pbs;
+//	struct ikev2_hash_algo h;
+	pb_stream a_pbs;
+//h_pbs;
 	struct state *pst = IS_CHILD_SA(st) ?
 		state_with_serialno(st->st_clonedfrom) : st;
 	enum keyword_authby authby = c->spd.this.authby;
@@ -2806,12 +2811,14 @@ static stf_status ikev2_send_auth(struct connection *c,
 	
 	case IKEv2_AUTH_DIGSIG:
 		if (authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)) {
-			if (!out_struct(&h, &ikev2_hash_algo_desc, &a_pbs, &h_pbs))
+			//if (!out_struct(&h, &ikev2_hash_algo_desc, &a_pbs, &h_pbs))
+			if (!out_raw(length_of_AlgorithIdentifier,1, &a_pbs,
+                        "ASN.1 Object Payload Length "))
 				return STF_INTERNAL_ERROR;
-			if (!out_raw(sha1WithRSAEncryption_oid_blob, SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &h_pbs,
+			if (!out_raw(sha1WithRSAEncryption_oid_blob, SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &a_pbs,
 						"ASN.1 Object Payload sahanaaaa"))
 				return STF_INTERNAL_ERROR;
-            close_output_pbs(&h_pbs);
+           // close_output_pbs(&h_pbs);
 			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
 					loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 				return STF_FATAL;
