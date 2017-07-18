@@ -545,10 +545,6 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 		   const enum keyword_authby that_authby)
 {
     
-  //  struct ikev2_hash_algo a;pb_stream in_pbs; 
-	    DBG(DBG_CONTROL,DBG_log("CHECK_AUTH"));
-	    DBG(DBG_CONTROL,DBG_log("CAME HERE CHECK AUTH"));
-	    DBG(DBG_CONTROL,DBG_log("ATYPE is %d",atype));
     unsigned char check_rsa_sha1_blob[SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE]={0x0};
     unsigned char check_length_rsa_sha1_blob[1]={0};
 	switch (atype) {
@@ -613,8 +609,6 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
         
 	case IKEv2_AUTH_DIGSIG:
         {
-        
-	    DBG(DBG_CONTROL,DBG_log("Came here after DIGSIG"));
 	    /*
          * Right now it is only checked if authby = AUTH_RSASIG , in future else if conditions can be added
          * to check if authby= AUTH_ECDSA , if ECDSA is supported and implemented.
@@ -624,14 +618,10 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-        //if(!in_struct(&a,&ikev2_hash_algo_desc,pbs,&in_pbs))
-        if(!in_raw(check_length_rsa_sha1_blob,1, pbs,"Storing the length of the ASN.1 Algorith Identifier"))
+        if(!in_raw(check_length_rsa_sha1_blob,1, pbs,"Storing the length of the ASN.1 Algorith Identifier sha1WithRSAEncryption"))
 				return FALSE;
-	    DBG(DBG_CONTROL,DBG_log("Came here after in_struct"));
-	    //DBG(DBG_CONTROL,DBG_log("Value of length is %d",a.isah_length));
-        if(!in_raw(check_rsa_sha1_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, pbs,"Storing the check_rsa_sha1_blob "))
+        if(!in_raw(check_rsa_sha1_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, pbs,"Storing the ASN.1 Algorith Identifier sha1WithRSAEncryption "))
 				return FALSE;
-	    DBG(DBG_CONTROL,DBG_log("Came here after in_raw"));
         if(!memeq(check_length_rsa_sha1_blob,length_of_AlgorithIdentifier,1))
 				return FALSE;
         if(!memeq(check_rsa_sha1_blob,sha1WithRSAEncryption_oid_blob,SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE))
@@ -1024,22 +1014,20 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 			return STF_INTERNAL_ERROR;
 	}
 
-
-	 /* 
- 	  * Notify payload of type SIGNATURE_HASH_ALGORITHMS
-          * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2) 
-          * Please Note that you need to check WHEN the Hash algorithm Notfication has to be sent out. It needs to be sent out only when 
-          * authentication is done by Digital Signature algorithm like RSA, DSA, ECDSA etc. Currently we check only for POLICY_RSASIG.
-          * Remember to check for other algorithms too if implemented in future. For example if ECDSA is added in future, check for 
-          * POLICY_ECDSA also.
-          */
+	/* 
+ 	 * Send SIGNATURE_HASH_ALGORITHMS Notify payload
+     * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2) 
+     * Please Note that you need to check WHEN the Hash algorithm Notfication has to be sent out. It needs to be sent out only when 
+     * authentication is done by Digital Signature algorithm like RSA, DSA, ECDSA etc. Currently we check only for POLICY_RSASIG.
+     * Remember to check for other algorithms too if implemented in future. For example if ECDSA is added in future, check for 
+     * POLICY_ECDSA also.
+     */
          
         if (c->policy & POLICY_RSASIG) {  
 		
                 int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
                                 return STF_INTERNAL_ERROR;
-
         }
 
 	/* From here on, only payloads left are Vendor IDs */
@@ -2744,10 +2732,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 				  pb_stream *outpbs)
 {
 	struct ikev2_a a;
-	    DBG(DBG_CONTROL,DBG_log("SEND_AUTH"));
-//	struct ikev2_hash_algo h;
 	pb_stream a_pbs;
-//h_pbs;
 	struct state *pst = IS_CHILD_SA(st) ?
 		state_with_serialno(st->st_clonedfrom) : st;
 	enum keyword_authby authby = c->spd.this.authby;
@@ -2811,14 +2796,12 @@ static stf_status ikev2_send_auth(struct connection *c,
 	
 	case IKEv2_AUTH_DIGSIG:
 		if (authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)) {
-			//if (!out_struct(&h, &ikev2_hash_algo_desc, &a_pbs, &h_pbs))
 			if (!out_raw(length_of_AlgorithIdentifier,1, &a_pbs,
-                        "ASN.1 Object Payload Length "))
+                        "Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption "))
 				return STF_INTERNAL_ERROR;
 			if (!out_raw(sha1WithRSAEncryption_oid_blob, SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE, &a_pbs,
-						"ASN.1 Object Payload sahanaaaa"))
+						"OID of  ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
 				return STF_INTERNAL_ERROR;
-           // close_output_pbs(&h_pbs);
 			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
 					loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 				return STF_FATAL;

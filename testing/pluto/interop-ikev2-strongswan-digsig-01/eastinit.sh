@@ -1,4 +1,4 @@
-/testing/guestbin/swan-prep
+/testing/guestbin/swan-prep --x509
 # confirm that the network is alive
 ../../pluto/bin/wait-until-alive -I 192.0.1.254 192.0.2.254
 # make sure that clear text does not get through
@@ -9,6 +9,4 @@ ping -n -c 4 -I 192.0.1.254 192.0.2.254
 ipsec start
 /testing/pluto/bin/wait-until-pluto-started
 ipsec auto --add westnet-eastnet-ikev2
-ipsec auto --status | grep westnet-eastnet-ikev2
-ipsec whack --debug-all --impair-retransmits
 echo "initdone"

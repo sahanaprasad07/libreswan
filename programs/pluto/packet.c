@@ -994,29 +994,6 @@ struct_desc ikev2_a_desc = { "IKEv2 Authentication Payload",
 			     ikev2a_fields, sizeof(struct ikev2_a) };
 
 /*
- *                          1                   2                   3
- *      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
- *     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- *     | ASN.1 Length  | AlgorithmIdentifier ASN.1 object              |
- *     +-+-+-+-+-+-+-+-+                                               +
- *     |                                                               |
- *     ~        AlgorithmIdentifier ASN.1 object continuing            ~
- *     |                                                               |
- *     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- *     |                                                               |
- *     ~                         Signature Value                       ~
- *     |                                                               |
- *     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- */
-
-static field_desc ikev2_hash_algo_fields[] = {
-	{ ft_len, 8 / BITS_PER_BYTE, "length", NULL },
-	{ ft_end,  0, NULL, NULL }
-};
-
-struct_desc ikev2_hash_algo_desc = { "IKEv2 ASN.1 Object in Authentication Payload",
-			     ikev2_hash_algo_fields, sizeof(struct ikev2_hash_algo) };
-/*
  * 3.9.  Nonce Payload
  *
  * The Nonce Payload, denoted Ni and Nr in this memo for the initiator's
