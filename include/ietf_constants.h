@@ -1642,8 +1642,7 @@ enum ipsec_comp_algo {
 /* 
  * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2)
  * Section 7 :  IANA Considerations
- * https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters.xhtml#hash-algorithms
- */
+ * https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters.xhtml#hash-algorithms */
 
 enum notify_payload_hash_algorithms {
 	IKEv2_HASH_ALGO_RESERVED = 0,
