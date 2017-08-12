@@ -1642,27 +1642,30 @@ enum ipsec_comp_algo {
 /* 
  * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2)
  * Section 7 :  IANA Considerations
- * Values 5-1023 are Unassigned.  Values 1024-65535 are reserved for
- * Private Use among mutually consenting parties.
  * https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters.xhtml#hash-algorithms
  */
 
 enum notify_payload_hash_algorithms {
-	IKEv2_HASH_ALGO_RESERVED=0,     
-        IKEv2_HASH_ALGO_SHA1=1,		
-        IKEv2_HASH_ALGO_SHA2_256=2,	
-        IKEv2_HASH_ALGO_SHA2_384=3,	
-        IKEv2_HASH_ALGO_SHA2_512=4, /* RFC 7427 */
+	IKEv2_HASH_ALGO_RESERVED = 0,
+	IKEv2_HASH_ALGO_SHA1 = 1,
+	IKEv2_HASH_ALGO_SHA2_256 = 2,
+	IKEv2_HASH_ALGO_SHA2_384 = 3,
+	IKEv2_HASH_ALGO_SHA2_512 = 4, /* RFC 7427 */
 	/* 5-1023 Unassigned */
- 	/* 1024-65535 Reserved for private use */
-	
+	/* 1024-65535 Reserved for private use */
+	IKEv2_HASH_ALGO_IDENTITY = 5, /* RFC 4307-bis */
+	IKEv2_HASH_ALGO_MAX_NUM
 };
 
-/* RFC 7427 says that the size of every hash algorithm should be 16-bit. */
-#define HASH_ALGO_OCTET_SIZE 2
-#define SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE 15
-static const unsigned char sha1WithRSAEncryption_oid_blob[SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE]={0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x05,0x05,0x00};
-static const uint8_t length_of_AlgorithIdentifier[1] = {SHA1WITHRSAENCRYPTION_OID_BLOB_SIZE};
+#define HASH_ALGO_SIZE 2 /* RFC 7427 - size of every hash algorithm is 2 bytes */
+#define SHA1_RSA_OID_SIZE 15 /* RFC 7427 - size of sha1WithRSAEncryption is 15 bytes */
+#define SIZE_LEN_ALGO_IDENTIFIER 1 /* RFC 7427 - size of length field is 1 byte */
+
+/* 15 byte OID of sha1WithRSAEncryption is specified in RFC 7427 in A.1.1 */
+static const unsigned char sha1_rsa_oid_blob[SHA1_RSA_OID_SIZE] = {0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x05,0x05,0x00};
+
+static const uint8_t len_algo_identifier[SIZE_LEN_ALGO_IDENTIFIER] = {SHA1_RSA_OID_SIZE};
+
 /* Limits on size of RSA moduli.
  * The upper bound matches that of DNSSEC (see RFC 2537).
  * The lower bound must be more than 11 octets for certain
