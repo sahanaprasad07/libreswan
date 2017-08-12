@@ -61,11 +61,11 @@
 #include "whack.h"
 #include "fetch.h"
 #include "asn1.h"
-
 #include "crypto.h"
 #include "secrets.h"
 
 #include "ike_alg.h"
+#include "ike_alg_null.h"
 #include "kernel_alg.h"
 #include "plutoalg.h"
 #include "pluto_crypt.h"
@@ -303,7 +303,7 @@ void ipsecdoi_initiate(int whack_sock,
 				    , uctx
 #endif
 				    );
-		} else if(st->st_ikev2) {
+		} else if (st->st_ikev2) {
 			ikev2_add_ipsec_child(whack_sock, st, c, policy, try,
 					replacing
 #ifdef HAVE_LABELED_IPSEC
@@ -459,6 +459,7 @@ bool extract_peer_id(struct id *peer, const pb_stream *id_pbs)
 	}
 	break;
 
+	/* seems odd to continue as ID_FQDN? */
 	case ID_USER_FQDN:
 		if (memchr(id_pbs->cur, '@', pbs_left(id_pbs)) == NULL) {
 			loglog(RC_LOG_SERIOUS,
@@ -615,7 +616,7 @@ void fmt_ipsec_sa_established(struct state *st, char *sadetails, size_t sad_len)
 		/* advance b to end of string */
 		b = b + strlen(b);
 
-		if(st->st_ikev2 && st->st_pfs_group != NULL)  {
+		if (st->st_ikev2 && st->st_pfs_group != NULL)  {
 			b = add_str(sadetails, sad_len , b, "-");
 			b = add_str(sadetails, sad_len, b, st->st_pfs_group->common.name);
 		}
@@ -723,7 +724,7 @@ void fmt_isakmp_sa_established(struct state *st, char *sa_details,
 	const char *integ_name;
 	char integ_buf[30];
 	if (st->st_ikev2) {
-		if (st->st_oakley.integ == NULL) {
+		if (st->st_oakley.integ == &ike_alg_integ_null) {
 			integ_name = "n/a";
 		} else {
 			snprintf(integ_buf, sizeof(integ_buf),

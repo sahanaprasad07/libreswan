@@ -88,7 +88,7 @@ int alg = 0;
 
 #include <assert.h>
 const char *alg_string = NULL;          /* algorithm string */
-struct esp_info *esp_info = NULL;       /* esp info from 1st (only) element */
+struct proposal_info *esp_info = NULL;       /* esp info from 1st (only) element */
 int proc_read_ok = 0;                   /* /proc/net/pf_key_support read ok */
 
 unsigned long replay_window = 0;
@@ -354,16 +354,24 @@ static bool pfkey_build(int error,
 	}
 }
 
+/*
+ * This policy disables both IKEv1 and IKEv2 checks so all algorithms
+ * are valid.
+ */
+
+const struct parser_policy policy = {
+	.ikev1 = false,
+	.ikev2 = false,
+	.alg_is_ok = kernel_alg_is_ok,
+};
+
 static int decode_esp(char *algname)
 {
 	char err_buf[256] = "";	/* ??? big enough? */
 	int esp_alg;
 
-	/*
-	 * POLICY=0 disables checks that the algorithm will work with
-	 * IKEv1 and/or IKEv2.
-	 */
-	struct alg_info_esp *alg_info = alg_info_esp_create_from_str(0, algname, err_buf, sizeof(err_buf));
+	struct alg_info_esp *alg_info = alg_info_esp_create_from_str(&policy, algname,
+								     err_buf, sizeof(err_buf));
 
 	if (alg_info != NULL) {
 		int esp_ealg_id, esp_aalg_id;
@@ -378,17 +386,17 @@ static int decode_esp(char *algname)
 			exit(1);
 		}
 		alg_string = algname;
-		esp_info = &alg_info->esp[0];
+		esp_info = &alg_info->ai.proposals[0];
 		if (debug) {
 			fprintf(stdout,
 				"%s: alg_info: cnt=%d ealg[0]=%d aalg[0]=%d\n",
 				progname,
 				alg_info->ai.alg_info_cnt,
-				esp_info->transid,
-				esp_info->auth);
+				esp_info->ikev1esp_transid,
+				esp_info->ikev1esp_auth);
 		}
-		esp_ealg_id = esp_info->transid;
-		esp_aalg_id = esp_info->auth;
+		esp_ealg_id = esp_info->ikev1esp_transid;
+		esp_aalg_id = esp_info->ikev1esp_auth;
 		if (kernel_alg_proc_read()) {
 			err_t ugh;
 
@@ -1121,7 +1129,7 @@ int main(int argc, char *argv[])
 			 */
 			alg_p = kernel_alg_sadb_alg_get(SADB_SATYPE_ESP,
 							SADB_EXT_SUPPORTED_ENCRYPT,
-							esp_info->transid);
+							esp_info->ikev1esp_transid);
 			assert(alg_p != NULL);
 			keylen = enckeylen * 8;
 
@@ -1155,7 +1163,7 @@ int main(int argc, char *argv[])
 			}
 			alg_p = kernel_alg_sadb_alg_get(SADB_SATYPE_ESP,
 							SADB_EXT_SUPPORTED_AUTH,
-							alg_info_esp_aa2sadb(esp_info->auth));
+							alg_info_esp_aa2sadb(esp_info->ikev1esp_auth));
 			assert(alg_p);
 			keylen = authkeylen * 8;
 			minbits = alg_p->sadb_alg_minbits;
@@ -1277,7 +1285,7 @@ int main(int argc, char *argv[])
 
 	switch (alg) {
 	case XF_OTHER_ALG:
-		authalg = alg_info_esp_aa2sadb(esp_info->auth);
+		authalg = alg_info_esp_aa2sadb(esp_info->ikev1esp_auth);
 		if (debug) {
 			fprintf(stdout, "%s: debug: authalg=%d\n",
 				progname, authalg);
@@ -1294,7 +1302,7 @@ int main(int argc, char *argv[])
 		encryptalg = SADB_X_CALG_LZS;
 		break;
 	case XF_OTHER_ALG:
-		encryptalg = esp_info->transid;
+		encryptalg = esp_info->ikev1esp_transid;
 		if (debug) {
 			fprintf(stdout, "%s: debug: encryptalg=%d\n",
 				progname, encryptalg);

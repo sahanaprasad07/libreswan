@@ -4,37 +4,64 @@
 #include <nss.h>
 #include <pk11pub.h>
 
+struct ike_alg;
+enum ike_alg_key;
+
 /*
  * More meaningful passert.
+ *
+ * Do not wrap ASSERTION in parenthesis as it will suppress the
+ * warning for 'foo = bar'.
  */
 #define passert_ike_alg(ALG, ASSERTION) {				\
-		bool __assertion = (ASSERTION);				\
-		if (!__assertion) {					\
-			PASSERT_FAIL("algorithm '%s' fails: %s",	\
-				     (ALG)->name, #ASSERTION);	\
+		/* wrapping ASSERTION in paren suppresses -Wparen */	\
+		bool assertion__ = ASSERTION; /* no paren */		\
+		if (!assertion__) {					\
+			PASSERT_FAIL("IKE_ALG %s algorithm '%s' fails: %s", \
+				     ike_alg_type_name((ALG)->algo_type), \
+				     (ALG)->fqn != NULL ? (ALG)->fqn	\
+				     : (ALG)->name != NULL ? (ALG)->name \
+				     : "NULL", #ASSERTION);		\
+		}							\
+	}
+
+#define pexpect_ike_alg(ALG, ASSERTION) {				\
+		/* wrapping ASSERTION in paren suppresses -Wparen */	\
+		bool assertion__ = ASSERTION; /* no paren */		\
+		if (!assertion__) {					\
+			PEXPECT_LOG("IKE_ALG %s algorithm '%s' fails: %s", \
+				    ike_alg_type_name((ALG)->algo_type), \
+				    (ALG)->fqn != NULL ? (ALG)->fqn	\
+				    : (ALG)->name != NULL ? (ALG)->name \
+				    : "NULL", #ASSERTION);		\
 		}							\
 	}
 
 /*
- * Different algorithms used by IKEv1/IKEv2.
+ * Different algorithm classes used by IKEv1/IKEv2 protocols.
  */
-enum ike_alg_type {
-	/* 0 is invalid */
-	IKE_ALG_ENCRYPT = 1,
-	IKE_ALG_HASH,
-	IKE_ALG_PRF,
-	IKE_ALG_INTEG,
-	IKE_ALG_DH,
-};
-#define IKE_ALG_FLOOR IKE_ALG_ENCRYPT
-#define	IKE_ALG_ROOF (IKE_ALG_DH+1)
+
+struct ike_alg_type;
+
+extern const struct ike_alg_type ike_alg_encrypt;
+extern const struct ike_alg_type ike_alg_hash;
+extern const struct ike_alg_type ike_alg_prf;
+extern const struct ike_alg_type ike_alg_integ;
+extern const struct ike_alg_type ike_alg_dh;
+
+/* keep old code working */
+#define IKE_ALG_ENCRYPT &ike_alg_encrypt
+#define IKE_ALG_HASH &ike_alg_hash
+#define IKE_ALG_PRF &ike_alg_prf
+#define IKE_ALG_INTEG &ike_alg_integ
+#define IKE_ALG_DH &ike_alg_dh
 
 /*
  * User frendly string representing the algorithm type (family).
  * "...Name()" returns the capitalized name.
  */
-const char *ike_alg_type_name(enum ike_alg_type type);
-const char *ike_alg_type_Name(enum ike_alg_type type);
+const char *ike_alg_type_name(const struct ike_alg_type *type);
+const char *ike_alg_type_Name(const struct ike_alg_type *type);
 
 /*
  * Different lookup KEYs used by IKEv1/IKEv2
@@ -61,8 +88,8 @@ const char *ike_alg_key_name(enum ike_alg_key key);
  * intended as a way to identify algorithms defined by IETF but not
  * supported here.
  */
-const struct ike_alg *ike_alg_byname(enum ike_alg_type type, const char *name);
-int ike_alg_enum_match(enum ike_alg_type type, enum ike_alg_key key,
+const struct ike_alg *ike_alg_byname(const struct ike_alg_type *type, const char *name);
+int ike_alg_enum_match(const struct ike_alg_type *type, enum ike_alg_key key,
 		       const char *name);
 
 /*
@@ -164,9 +191,10 @@ int ike_alg_enum_match(enum ike_alg_type type, enum ike_alg_key key,
  */
 struct ike_alg {
 	/*
-	 * Name to print when logging.
+	 * Name to print when logging.  FQN = fully-qualified-name.
 	 */
 	const char *name;
+	const char *fqn;
 	/*
 	 * List of all possible names that might be used to specify
 	 * this algorithm.  Must include NAME and enum names.
@@ -187,8 +215,11 @@ struct ike_alg {
 	 * Macros provide short term aliases for the slightly longer
 	 * index references (tacky, unixish, and delay churning the
 	 * code).
+	 *
+	 * -1 indicates not valid (annoyingly 0 is used by IKEv2 for
+	 * NULL integrity).
 	 */
-	const enum ike_alg_type algo_type;
+	const struct ike_alg_type *algo_type;
 #define ikev1_oakley_id id[IKEv1_OAKLEY_ID]
 #define ikev1_esp_id id[IKEv1_ESP_ID]
 #define ikev2_alg_id id[IKEv2_ALG_ID]
@@ -484,12 +515,13 @@ struct prf_ops {
 struct integ_desc {
 	struct ike_alg common;	/* MUST BE FIRST */
 	/*
-	 * Number of secret bytes needed to prime the integ algorithm.
+	 * Size, in bytes (octets), of the keying material needed to
+	 * prime the integrity algorithm.
 	 *
 	 * If there's an IKE PRF implementation, then these values
 	 * need to be consistent with the PRF.
 	 */
-	const size_t integ_key_size;
+	const size_t integ_keymat_size;
 	/*
 	 * The size of the output from the integrity algorithm.  This
 	 * is put on the wire as "Integrity Checksum Data".
@@ -502,6 +534,14 @@ struct integ_desc {
 	 */
 	const size_t integ_output_size;
 	/*
+	 * IKEv1 IPsec AH transform values
+	 * http://www.iana.org/assignments/isakmp-registry/isakmp-registry.xhtml#isakmp-registry-7
+	 *
+	 * This seems to be closely related to the value fed into the
+	 * KLIPS kernel interface.
+	 */
+	enum ipsec_authentication_algo integ_ikev1_ah_id;
+	/*
 	 * For IKE.  The PRF implementing integrity.  The output is
 	 * truncated down to INTEG_HASH_LEN.
 	 *
@@ -509,29 +549,6 @@ struct integ_desc {
 	 */
 	const struct prf_desc *prf;
 };
-
-/*
- * Find the IKEv2 ENCRYPT/PRF/INTEG algorithm using IKEv2 wire-values.
- *
- * The returned algorithm may not have native support.  Native
- * algorithms have do_ike_test non-NULL.
- */
-
-const struct encrypt_desc *ikev2_get_encrypt_desc(enum ikev2_trans_type_encr);
-const struct prf_desc *ikev2_get_prf_desc(enum ikev2_trans_type_prf);
-const struct integ_desc *ikev2_get_integ_desc(enum ikev2_trans_type_integ);
-
-/*
- * Find the IKEv1 ENCRYPT/PRF/INTEG algorithm using IKEv1 OAKLEY
- * values.
- *
- * Unlike IKEv2, IKEv1 uses different wire-values for IKE, ESP, and
- * AH.  This just deals with OAKLEY.
- */
-
-const struct encrypt_desc *ikev1_get_ike_encrypt_desc(enum ikev1_encr_attribute);
-const struct prf_desc *ikev1_get_ike_prf_desc(enum ikev1_auth_attribute);
-const struct integ_desc *ikev1_get_ike_integ_desc(enum ikev1_auth_attribute);
 
 /*
  * Is the encryption algorithm AEAD (Authenticated Encryption with
@@ -635,7 +652,6 @@ struct dhmke_ops {
 };
 
 extern const struct oakley_group_desc unset_group;      /* magic signifier */
-extern const struct oakley_group_desc *lookup_group(u_int16_t group);
 const struct oakley_group_desc **next_oakley_group(const struct oakley_group_desc **);
 
 /*
@@ -649,6 +665,43 @@ const struct prf_desc *prf_desc(const struct ike_alg *alg);
 const struct integ_desc *integ_desc(const struct ike_alg *alg);
 const struct encrypt_desc *encrypt_desc(const struct ike_alg *alg);
 const struct oakley_group_desc *oakley_group_desc(const struct ike_alg *alg);
+const struct oakley_group_desc *dh_desc(const struct ike_alg *alg);
+
+/*
+ * Find the ENCRYPT / PRF / INTEG / DH algorithm using the IKEv2 wire
+ * value.
+ *
+ * Use ike_alg_is_ike() to confirm that the algorithm has a native
+ * implementation (as needed by IKE and ESP/AH PFS).  Use a kernel
+ * query to confirm that the algorithm has kernel support (XXX: what?
+ * who knows).
+ */
+
+const struct encrypt_desc *ikev2_get_encrypt_desc(enum ikev2_trans_type_encr);
+const struct prf_desc *ikev2_get_prf_desc(enum ikev2_trans_type_prf);
+const struct integ_desc *ikev2_get_integ_desc(enum ikev2_trans_type_integ);
+const struct oakley_group_desc *ikev2_get_dh_desc(enum ike_trans_type_dh);
+
+/*
+ * Find the ENCRYPT / PRF / DH algorithm using IKEv1 IKE (aka OAKLEY)
+ * wire value.
+ *
+ * Unlike IKEv2, IKEv1 uses different wire-values for IKE, ESP, and
+ * AH.  This just deals with IKE (well, ok, in the case of DH, it also
+ * deals with ESP/AH as the value is the same).
+ */
+
+const struct encrypt_desc *ikev1_get_ike_encrypt_desc(enum ikev1_encr_attribute);
+const struct prf_desc *ikev1_get_ike_prf_desc(enum ikev1_auth_attribute);
+const struct oakley_group_desc *ikev1_get_ike_dh_desc(enum ike_trans_type_dh);
+
+/*
+ * Find the IKEv1 ENCRYPT / INTEG algorithm that will be fed into the
+ * kernel to provide an IPSEC tunnel.
+ */
+
+const struct encrypt_desc *ikev1_get_kernel_encrypt_desc(enum ipsec_cipher_algo);
+const struct integ_desc *ikev1_get_kernel_integ_desc(enum ikev1_auth_attribute);
 
 /*
  * Pretty print the algorithm into a buffer as a string.  The string

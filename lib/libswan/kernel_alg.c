@@ -215,8 +215,8 @@ void kernel_integ_add(enum sadb_aalg sadb_aalg,
 		      const char *netlink_name)
 {
 	struct sadb_alg alg = {
-		.sadb_alg_minbits = integ->integ_key_size * BITS_PER_BYTE,
-		.sadb_alg_maxbits = integ->integ_key_size * BITS_PER_BYTE,
+		.sadb_alg_minbits = integ->integ_keymat_size * BITS_PER_BYTE,
+		.sadb_alg_maxbits = integ->integ_keymat_size * BITS_PER_BYTE,
 		.sadb_alg_id = sadb_aalg,
 	};
 	if (kernel_alg_add(SADB_SATYPE_ESP,  SADB_EXT_SUPPORTED_AUTH, &alg) != 1) {
@@ -284,7 +284,7 @@ err_t check_kernel_encrypt_alg(int alg_id, unsigned int key_len)
 		case ESP_AES_CCM_12:
 		case ESP_AES_CCM_16:
 		case ESP_AES_CTR:
-		case ESP_CAMELLIAv1:
+		case ESP_CAMELLIA:
 			/* ??? does 0 make sense here? */
 			if (key_len != 0 && key_len != 128 &&
 			    key_len != 192 && key_len != 256) {
@@ -467,6 +467,17 @@ struct sadb_alg *kernel_alg_esp_sadb_alg(int alg_id)
 	return sadb_alg;
 }
 
+bool kernel_alg_is_ok(const struct ike_alg *alg)
+{
+	if (alg->algo_type == &ike_alg_dh) {
+		/* require an in-process/ike implementation of DH */
+		return ike_alg_is_ike(alg);
+	} else {
+		/* ask the kernel? */
+		return TRUE;
+	}
+}
+
 /* ??? identical to kernel_alg_ah_auth_ok */
 bool kernel_alg_esp_auth_ok(int auth,
 			struct alg_info_esp *alg_info __attribute__((unused)))
@@ -544,11 +555,11 @@ bool kernel_alg_info(u_int8_t transid, u_int16_t keylen, u_int16_t auth,
 
 	/* if no key length is given, return default */
 	if (keylen == 0) {
-		ki->enckeylen = esp_ealg[sadb_ealg].sadb_alg_minbits /
+		ki->enckeysize = esp_ealg[sadb_ealg].sadb_alg_minbits /
 			BITS_PER_BYTE;
 	} else if (esp_ealg[sadb_ealg].sadb_alg_minbits <= keylen &&
 		keylen <= esp_ealg[sadb_ealg].sadb_alg_maxbits) {
-		ki->enckeylen = keylen / BITS_PER_BYTE;
+		ki->enckeysize = keylen / BITS_PER_BYTE;
 	} else {
 		DBG(DBG_PARSING,
 			DBG_log("kernel_alg_esp_info(): transid=%d, proposed keylen=%u is invalid, not %u<=X<=%u",
@@ -563,8 +574,8 @@ bool kernel_alg_info(u_int8_t transid, u_int16_t keylen, u_int16_t auth,
 	ki->encryptalg = sadb_ealg;
 	ki->authalg = sadb_aalg;
 	DBG(DBG_PARSING,
-		DBG_log("kernel_alg_esp_info(): transid=%d, auth=%d, enckeylen=%d, encryptalg=%d, authalg=%d",
-			transid, auth, (int)ki->enckeylen,
+		DBG_log("kernel_alg_esp_info(): transid=%d, auth=%d, enckeysize=%d, encryptalg=%d, authalg=%d",
+			transid, auth, (int)ki->enckeysize,
 			ki->encryptalg,
 			ki->authalg);
 		);

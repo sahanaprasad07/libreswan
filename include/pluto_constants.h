@@ -720,6 +720,12 @@ enum encaps_options {
 	encaps_yes = 3,
 };
 
+enum nic_offload_options {
+	nic_offload_no = 1,
+	nic_offload_yes = 2,
+	nic_offload_auto = 3,
+};
+
 enum ynf_options {
 	ynf_no   = 0,
 	ynf_yes  = 1,
@@ -963,6 +969,7 @@ enum pluto_exit_code {
 	PLUTO_EXIT_NSS_FAIL = 6,
 	PLUTO_EXIT_AUDIT_FAIL = 7,
 	PLUTO_EXIT_SECCOMP_FAIL = 8,
+	PLUTO_EXIT_UNBOUND_FAIL = 9,
 	PLUTO_EXIT_LOCK_FAIL = 10, /* historic value */
 };
 

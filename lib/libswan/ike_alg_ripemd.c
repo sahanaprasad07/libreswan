@@ -38,6 +38,7 @@
 const struct integ_desc ike_alg_integ_hmac_ripemd_160_96 = {
 	.common = {
 		.name = "ripemd",
+		.fqn = "HMAC_RIPEMD_160_96",
 		.names = { "ripemd", "hmac_ripemd", "hmac_ripemd_160_96", },
 		.officname = "ripemd",
 		.algo_type = IKE_ALG_INTEG,
@@ -47,4 +48,5 @@ const struct integ_desc ike_alg_integ_hmac_ripemd_160_96 = {
 	},
 	.integ_key_size = BYTES_FOR_BITS(160),
 	.integ_output_size = BYTES_FOR_BITS(96),
+	.integ_ikev1_ah_id = AH_RIPEMD,
 };

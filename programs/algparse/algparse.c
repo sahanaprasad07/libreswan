@@ -11,48 +11,66 @@
 
 
 #define CHECK(TYPE,PARSE) {						\
-		printf("%*s[%s=%s]%*s ",				\
-		       3 - (int)strlen(#PARSE), "",			\
-		       #PARSE, algstr,					\
-		       max(0, 20 - (int)strlen(algstr)), "");		\
+		printf("[%s=%s]\n",					\
+		       #PARSE, algstr);					\
 		fflush(NULL);						\
 		char err_buf[512] = "";	/* ??? big enough? */		\
 		struct alg_info_##TYPE *e =				\
-			alg_info_##PARSE##_create_from_str(policy,	\
+			alg_info_##PARSE##_create_from_str(&policy,	\
 							   algstr,	\
 							   err_buf,	\
 							   sizeof(err_buf)); \
 		if (e != NULL) {					\
 			passert(err_buf[0] == '\0');			\
-			char algbuf[512] = "";				\
-			alg_info_##TYPE##_snprint(algbuf, sizeof(algbuf), e); \
-			printf("   OK: %s\n", algbuf);			\
+			FOR_EACH_PROPOSAL_INFO(&e->ai, proposal) {	\
+				LSWLOG(log) {				\
+					lswlog_proposal_info(log, proposal); \
+					printf("\t%s\n", LSWLOG_BUF(log)); \
+				}					\
+			}						\
 			alg_info_free(&e->ai);				\
 		} else {						\
 			passert(err_buf[0]);				\
-			printf("ERROR: %s\n", err_buf);			\
+			printf("\tERROR: %s\n", err_buf);		\
 		}							\
 		fflush(NULL);						\
 	}
 
-static void esp(lset_t policy, const char *algstr)
+/*
+ * Kernel not available so fake it.
+ */
+static bool kernel_alg_is_ok(const struct ike_alg *alg)
 {
+	if (alg->algo_type == &ike_alg_dh) {
+		/* require an in-process/ike implementation of DH */
+		return ike_alg_is_ike(alg);
+	} else {
+		/* no kernel to ask! */
+		return TRUE;
+	}
+}
+
+static void esp(struct parser_policy policy, const char *algstr)
+{
+	policy.alg_is_ok = kernel_alg_is_ok;
 	CHECK(esp, esp);
 }
 
-static void ah(lset_t policy, const char *algstr)
+static void ah(struct parser_policy policy, const char *algstr)
 {
+	policy.alg_is_ok = kernel_alg_is_ok;
 	CHECK(esp, ah);
 }
 
-static void ike(lset_t policy, const char *algstr)
+static void ike(struct parser_policy policy, const char *algstr)
 {
+	policy.alg_is_ok = ike_alg_is_ike;
 	CHECK(ike, ike);
 }
 
-static void all(lset_t policy, const char *algstr)
+static void all(const struct parser_policy policy, const char *algstr)
 {
-	typedef void (protocol_t)(lset_t policy, const char *);
+	typedef void (protocol_t)(struct parser_policy policy, const char *);
 	protocol_t *const protocols[] = { ike, ah, esp, NULL, };
 	for (protocol_t *const *protocol = protocols;
 	     *protocol != NULL;
@@ -61,7 +79,7 @@ static void all(lset_t policy, const char *algstr)
 	}
 }
 
-static void test(lset_t policy)
+static void test(const struct parser_policy policy)
 {
 	/*
 	 * esp=
@@ -167,6 +185,13 @@ static void test(lset_t policy)
 	esp(policy, "aes_ctr256");
 	esp(policy, "serpent");
 	esp(policy, "twofish");
+	esp(policy, "camellia_cbc_256-hmac_sha2_512_256;modp8192");
+	esp(policy, "3des-sha1;modp8192"); /* allow ';' when unambigious */
+	esp(policy, "3des-sha1-modp8192"); /* allow '-' when unambigious */
+	esp(policy, "aes-sha1,3des-sha1;modp8192"); /* set modp8192 on all algs */
+	esp(policy, "aes-sha1-modp8192,3des-sha1-modp8192"); /* silly */
+	esp(policy, "aes-sha1-modp8192,aes-sha1-modp8192,aes-sha1-modp8192"); /* suppress duplicates */
+
 	/*
 	 * should this be supported - for now man page says not
 	 * esp(policy, "modp1536");
@@ -194,12 +219,12 @@ static void test(lset_t policy)
 	esp(policy, "aes-id3"); /* should be rejected; idXXX removed */
 	esp(policy, "aes_gcm-md5"); /* AEAD must have auth null */
 	esp(policy, "mars"); /* support removed */
-	esp(policy, "3des-sha1;dh22"); /* support for dh22 removed */
-	esp(policy, "3des-sha1-dh21"); /* ';' vs '-' */
-	esp(policy, "3des-sha1;dh21,3des-sha2"); /* DH must be last */
 	esp(policy, "aes_gcm-16"); /* don't parse as aes_gcm_16 */
 	esp(policy, "aes_gcm-0"); /* invalid keylen */
 	esp(policy, "aes_gcm-123456789012345"); /* huge keylen */
+	esp(policy, "3des-sha1;dh22"); /* support for dh22 removed */
+	esp(policy, "3des-sha1;modp8192,3des-sha2"); /* ;DH must be last */
+	esp(policy, "3des-sha1-modp8192,3des-sha2;modp8192"); /* ;DH confusion */
 
 	/*
 	 * ah=
@@ -219,6 +244,7 @@ static void test(lset_t policy)
 	ah(policy, "sha2_384");
 	ah(policy, "sha2_512");
 	ah(policy, "aes_xcbc");
+	ah(policy, "sha1-modp8192,sha1-modp8192,sha1-modp8192"); /* suppress duplicates */
 
 	printf("\n---- AH tests that should fail ----\n");
 
@@ -245,16 +271,23 @@ static void test(lset_t policy)
 	ike(policy, "3des-sha1;dh21");
 	ike(policy, "3des-sha1-ecp_521");
 	ike(policy, "aes_gcm");
+	ike(policy, "aes-sha1-modp8192,aes-sha1-modp8192,aes-sha1-modp8192"); /* suppress duplicates */
 
 	printf("\n---- IKE tests that should fail ----\n");
 
 	ike(policy, "id2"); /* should be rejected; idXXX removed */
 	ike(policy, "3des-id2"); /* should be rejected; idXXX removed */
+	ike(policy, "aes_ccm"); /* ESP/AH only */
 }
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: [ -v1 ] [ -v2 ] [ -fips ] [ -v ] [ [<protocol>=]<proposals> ...]\n");
+	fprintf(stderr, "Usage: <option> ... [ [ike|esp|ah=]<proposals> ...]\n");
+	fprintf(stderr, "  -v1: algorithm requires IKEv1 support\n");
+	fprintf(stderr, "  -v2: algorithm requires IKEv2 support\n");
+	fprintf(stderr, "  -fips: put NSS in FIPS mode\n");
+	fprintf(stderr, "  -v: more verbose\n");
+	fprintf(stderr, "  -t: run test suite\n");
 }
 
 int main(int argc, char *argv[])
@@ -267,7 +300,11 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	lset_t policy = LEMPTY;
+	struct parser_policy policy = {
+		.ikev1 = false,
+		.ikev2 = false,
+	};
+	bool run_tests = false;
 
 	char **argp = argv + 1;
 	for (; *argp != NULL; argp++) {
@@ -281,10 +318,12 @@ int main(int argc, char *argv[])
 		if (strcmp(arg, "?") == 0 || strcmp(arg, "h") == 0) {
 			usage();
 			exit(0);
+		} else if (strcmp(arg, "t") == 0) {
+			run_tests = true;
 		} else if (strcmp(arg, "v1") == 0) {
-			policy |= POLICY_IKEV1_ALLOW;
+			policy.ikev1 = true;
 		} else if (strcmp(arg, "v2") == 0) {
-			policy |= (POLICY_IKEV2_ALLOW | POLICY_IKEV2_PROPOSE);
+			policy.ikev2 = true;
 		} else if (strcmp(arg, "fips") == 0 || strcmp(arg, "fips=yes") == 0 || strcmp(arg, "fips=on") == 0) {
 			lsw_set_fips_mode(LSW_FIPS_ON);
 		} else if (strcmp(arg, "fips=no") == 0 || strcmp(arg, "fips=off") == 0) {
@@ -312,6 +351,10 @@ int main(int argc, char *argv[])
 	ike_alg_init();
 
 	if (*argp) {
+		if (run_tests) {
+			fprintf(stderr, "-t conflicts with algorithm list\n");
+			exit(1);
+		}
 		for (; *argp != NULL; argp++) {
 			const char *arg = *argp;
 			/*
@@ -328,7 +371,7 @@ int main(int argc, char *argv[])
 				all(policy, arg);
 			}
 		}
-	} else {
+	} else if (run_tests) {
 		test(policy);
 	}
 

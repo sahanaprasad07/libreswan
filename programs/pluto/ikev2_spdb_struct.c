@@ -54,6 +54,7 @@
 #include "alg_info.h"
 #include "kernel_alg.h"
 #include "ike_alg.h"
+#include "ike_alg_null.h"
 #include "db_ops.h"
 #include "demux.h"
 #include "pluto_crypt.h"  /* for pluto_crypto_req & pluto_crypto_req_cont */
@@ -1376,10 +1377,14 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 	DBG(DBG_CONTROL, DBG_log("converting proposal to internal trans attrs"));
 
 	/*
-	 * blank everything and only update TA_OUT on success.
+	 * blank TA_OUT, and only update it on success.
 	 */
-	struct trans_attrs ta = { .encrypt = 0 };
-	*ta_out = ta;
+	zero(ta_out);
+
+	/*
+	 * Start with an empty TA.
+	 */
+	struct trans_attrs ta = { .encrypt = 0, };
 
 	enum ikev2_trans_type type;
 	struct ikev2_transforms *transforms;
@@ -1420,6 +1425,10 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 				 * XXX: Should this check that the key
 				 * length is present when required, or
 				 * assume matching did its job.
+				 *
+				 * XXX: Always assign both .encrypt
+				 * and .encryptor - it makes auditing
+				 * easier.
 				 */
 				ta.encrypt = transform->id;
 				ta.encrypter = encrypter;
@@ -1446,12 +1455,8 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 				ta.prf = prf;
 				break;
 			}
-			case IKEv2_TRANS_TYPE_INTEG: {
-				if (transform->id == 0) {
-					/*passert(ikev2_encr_aead(proposal->transforms[IKEv2_TRANS_TYPE_ENCR].id);*/
-					DBG(DBG_CONTROL, DBG_log("ignoring NULL integrity"));
-					break;
-				}
+			case IKEv2_TRANS_TYPE_INTEG:
+			{
 				const struct integ_desc *integ = ikev2_get_integ_desc(transform->id);
 				if (integ == NULL) {
 					/*
@@ -1479,6 +1484,10 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 				 * INTEG_HASH should at least be moved
 				 * to enum ipsec_trans_attrs
 				 * .ipsec_authentication_algo.
+				 *
+				 * XXX: Always assign both .integ_hash
+				 * and .integ - it makes auditing
+				 * easier.
 				 */
 				ta.integ_hash = integ->common.id[IKEv2_ALG_ID];
 				ta.integ = integ;
@@ -1486,7 +1495,7 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 			}
 			case IKEv2_TRANS_TYPE_DH: {
 				const struct oakley_group_desc *group =
-					lookup_group(transform->id);
+					ikev2_get_dh_desc(transform->id);
 				if (group == NULL) {
 					/*
 					 * Assuming pluto, and not the
@@ -1526,6 +1535,16 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 			}
 		}
 	}
+
+	/*
+	 * Patch up integrity.
+	 */
+	if (ike_alg_is_aead(ta.encrypter) && ta.integ == NULL) {
+		DBG(DBG_CONTROL, DBG_log("since AEAD, setting NULL integ to 'null'"));
+		ta.integ = &ike_alg_integ_null;
+		ta.integ_hash = 0;
+	}
+
 	*ta_out = ta;
 	return TRUE;
 }
@@ -1560,12 +1579,17 @@ bool ikev2_proposal_to_proto_info(struct ikev2_proposal *proposal,
 	 * algorithm has a unique IKEv2 number, and that is expected.
 	 *
 	 * XXX: The real fix is to delete INTEG_HASH.
+	 *
+	 * XXX: Always assign both .integ_hash and .integ - it makes
+	 * auditing easier.
 	 */
-	ta.integ_hash = (ta.integ == NULL
+	const struct integ_desc *integ = ta.integ;
+	ta.integ_hash = (integ == NULL
 			 ? AUTH_ALGORITHM_NONE
-			 : ta.integ->common.ikev1_esp_id > 0
-			 ? ta.integ->common.ikev1_esp_id
-			 : ta.integ->common.id[IKEv2_ALG_ID]);
+			 : integ->common.ikev1_esp_id > 0
+			 ? integ->common.ikev1_esp_id
+			 : integ->common.id[IKEv2_ALG_ID]);
+	ta.integ = integ;
 
 	/*
 	 * IKEv2 ESP/AH and IKE all use the same algorithm numbering
@@ -1598,10 +1622,15 @@ bool ikev2_proposal_to_proto_info(struct ikev2_proposal *proposal,
 		 * "fixed".
 		 *
 		 * XXX: the real fix is to delete ENCRYPT.
+		 *
+		 * XXX: Always assign both .encrypt and .encryptor -
+		 * it makes auditing easier.
 		 */
-		ta.encrypt = (ta.encrypter->common.ikev1_esp_id > 0
-			      ? ta.encrypter->common.ikev1_esp_id
-			      : ta.encrypter->common.id[IKEv2_ALG_ID]);
+		const struct encrypt_desc *encrypt = ta.encrypter;
+		ta.encrypt = (encrypt->common.ikev1_esp_id > 0
+			      ? encrypt->common.ikev1_esp_id
+			      : encrypt->common.id[IKEv2_ALG_ID]);
+		ta.encrypter = encrypt;
 		err_t ugh;
 		ugh = check_kernel_encrypt_alg(ta.encrypt, ta.enckeylen);
 		if (ugh != NULL) {
@@ -1965,15 +1994,15 @@ void ikev2_proposals_from_alg_info_ike(const char *name, const char *what,
 		/*
 		 * Encryption
 		 */
-		const struct encrypt_desc *ealg = ike_info->ike_encrypt;
-		if (!append_encrypt_transform(proposal, ealg, ike_info->ike_eklen)) {
+		const struct encrypt_desc *ealg = ike_info->encrypt;
+		if (!append_encrypt_transform(proposal, ealg, ike_info->enckeylen)) {
 			continue;
 		}
 
 		/*
 		 * PRF
 		 */
-		const struct prf_desc *prf = ike_info->ike_prf;
+		const struct prf_desc *prf = ike_info->prf;
 		if (prf == NULL) {
 			PEXPECT_LOG("%s", "IKEv2 proposal with no PRF should have been dropped");
 			continue;
@@ -1991,8 +2020,8 @@ void ikev2_proposals_from_alg_info_ike(const char *name, const char *what,
 		 * INTEG
 		 */
 		if (ike_alg_enc_requires_integ(ealg)) {
-			const struct integ_desc *integ = ike_info->ike_integ;
-			if (integ == NULL) {
+			const struct integ_desc *integ = ike_info->integ;
+			if (integ == &ike_alg_integ_null) {
 				PEXPECT_LOG("%s", "IKEv2 proposal with no INTEG should have been dropped");
 				continue;
 			} else if (integ->common.id[IKEv2_ALG_ID] == 0) {
@@ -2019,13 +2048,13 @@ void ikev2_proposals_from_alg_info_ike(const char *name, const char *what,
 		/*
 		 * DH GROUP
 		 */
-		const struct oakley_group_desc *group = ike_info->ike_dh_group;
+		const struct oakley_group_desc *group = ike_info->dh;
 		if (group == NULL) {
 			PEXPECT_LOG("%s", "IKEv2 proposal with no DH_GROUP should have been dropped");
 			continue;
 		} else {
 			append_transform(proposal, IKEv2_TRANS_TYPE_DH,
-					 ike_info->ike_dh_group->group, 0);
+					 ike_info->dh->group, 0);
 		}
 
 		DBG(DBG_CONTROL,
@@ -2105,7 +2134,7 @@ static struct ikev2_proposal default_ikev2_ah_proposal_missing_esn[] = {
 	 * something strongswan might accept; bottom of the preference list
 	 */
 	{
-		.protoid = IKEv2_SEC_PROTO_ESP,
+		.protoid = IKEv2_SEC_PROTO_AH,
 		.transforms = {
 			[IKEv2_TRANS_TYPE_INTEG] = TR(AUTH_SHA1_96),
 		},
@@ -2223,7 +2252,7 @@ void ikev2_proposals_from_alg_info_esp(const char *name, const char *what,
 		case POLICY_ENCRYPT:
 			proposal->protoid = IKEv2_SEC_PROTO_ESP;
 
-			const unsigned ealg = esp_info->transid;
+			const unsigned ealg = esp_info->ikev1esp_transid;
 			if (!ESP_EALG_PRESENT(ealg)) {
 				struct esb_buf buf;
 				loglog(RC_LOG_SERIOUS,
@@ -2236,31 +2265,37 @@ void ikev2_proposals_from_alg_info_esp(const char *name, const char *what,
 			/*
 			 * Encryption.
 			 */
-			const struct encrypt_desc *encrypt = esp_info->esp_encrypt;
+			const struct encrypt_desc *encrypt = esp_info->encrypt;
 			if (!append_encrypt_transform(proposal, encrypt,
 						      esp_info->enckeylen)) {
 				continue;
 			}
 
 			/* add ESP auth attr (if present) */
-			if (esp_info->auth != AUTH_ALGORITHM_NONE) {
-				unsigned aalg = alg_info_esp_aa2sadb(esp_info->auth);
+			if (esp_info->ikev1esp_auth != AUTH_ALGORITHM_NONE) {
+				unsigned aalg = alg_info_esp_aa2sadb(esp_info->ikev1esp_auth);
 				if (!ESP_AALG_PRESENT(aalg)) {
 					struct esb_buf buf;
 					/* XXX: correct enum??? */
 					loglog(RC_LOG_SERIOUS,
 					       "kernel_alg_db_add() kernel auth aalg_id=%s=%d not present",
-					       enum_showb(&auth_alg_names, esp_info->auth, &buf),
-					       esp_info->auth);
+					       enum_showb(&auth_alg_names, esp_info->ikev1esp_auth, &buf),
+					       esp_info->ikev1esp_auth);
 					continue;
 				}
-				const struct integ_desc *integ = esp_info->esp_integ;
-				if (integ == NULL) {
+				/*
+				 * XXX: Wrong check?
+				 *
+				 * IKEV1ESP_AUTH != 0 IFF integ !=
+				 * &ike_alg_integ_null
+				 */
+				const struct integ_desc *integ = esp_info->integ;
+				if (integ == &ike_alg_integ_null) {
 					struct esb_buf buf;
 					loglog(RC_LOG_SERIOUS,
 					       "dropping local ESP proposal containing unsupported INTEG algorithm %s=%d",
-					       enum_showb(&auth_alg_names, esp_info->auth, &buf),
-					       esp_info->auth);
+					       enum_showb(&auth_alg_names, esp_info->ikev1esp_auth, &buf),
+					       esp_info->ikev1esp_auth);
 					continue;
 				}
 				append_transform(proposal, IKEv2_TRANS_TYPE_INTEG,
@@ -2271,22 +2306,28 @@ void ikev2_proposals_from_alg_info_esp(const char *name, const char *what,
 
 		case POLICY_AUTHENTICATE:
 			proposal->protoid = IKEv2_SEC_PROTO_AH;
-			int aalg = alg_info_esp_aa2sadb(esp_info->auth);
+			int aalg = alg_info_esp_aa2sadb(esp_info->ikev1esp_auth);
 			if (!ESP_AALG_PRESENT(aalg)) {
 				struct esb_buf buf;
 				loglog(RC_LOG_SERIOUS,
 				       "kernel_alg_db_add() kernel auth aalg_id=%s=%d not present",
-				       enum_showb(&auth_alg_names, esp_info->auth, &buf),
-				       esp_info->auth);
+				       enum_showb(&auth_alg_names, esp_info->ikev1esp_auth, &buf),
+				       esp_info->ikev1esp_auth);
 				continue;
 			}
-			const struct integ_desc *integ = esp_info->esp_integ;
-			if (integ == NULL) {
+			/*
+			 * XXX: Wrong check?
+			 *
+			 * AH doesn't allow, and should have already
+			 * rejected, NULL integrity.
+			 */
+			const struct integ_desc *integ = esp_info->integ;
+			if (integ == &ike_alg_integ_null) {
 				struct esb_buf buf;
 				loglog(RC_LOG_SERIOUS,
 				       "dropping local AH proposal containing unsupported INTEG algorithm %s=%d",
-				       enum_showb(&auth_alg_names, esp_info->auth, &buf),
-				       esp_info->auth);
+				       enum_showb(&auth_alg_names, esp_info->ikev1esp_auth, &buf),
+				       esp_info->ikev1esp_auth);
 				continue;
 			}
 			append_transform(proposal, IKEv2_TRANS_TYPE_INTEG,
@@ -2358,7 +2399,8 @@ const struct oakley_group_desc *ikev2_proposals_first_modp(struct ikev2_proposal
 		int t;
 		for (t = 0; t < transforms->transform[t].valid; t++) {
 			int groupnum = transforms->transform[t].id;
-			const struct oakley_group_desc *group = lookup_group(groupnum);
+			const struct oakley_group_desc *group =
+				ikev2_get_dh_desc(groupnum);
 			if (group == NULL) {
 				/*
 				 * Things screwed up (this group
@@ -2374,7 +2416,8 @@ const struct oakley_group_desc *ikev2_proposals_first_modp(struct ikev2_proposal
 	}
 	DBG(DBG_CONTROL, DBG_log("No valid MODP (DH) transform found"));
 	/* return something that should be supported.  */
-	const struct oakley_group_desc *group = lookup_group(OAKLEY_GROUP_MODP2048);
+	const struct oakley_group_desc *group =
+		ikev2_get_dh_desc(OAKLEY_GROUP_MODP2048);
 	passert(group != NULL);
 	return group;
 }

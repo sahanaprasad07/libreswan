@@ -1,1 +1,1 @@
-IPSECBASEVERSION=3.21rc5
+IPSECBASEVERSION=3.master-$(shell date +%Y%V).git

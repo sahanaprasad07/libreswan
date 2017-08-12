@@ -45,6 +45,8 @@
 #include "cbc_test_vectors.h"
 #include "gcm_test_vectors.h"
 
+#include "kernel_alg.h"
+
 void init_crypto(void)
 {
 	ike_alg_init();
@@ -57,6 +59,44 @@ void init_crypto(void)
 				 aes_ctr_tests));
 	passert(test_cbc_vectors(&ike_alg_encrypt_aes_cbc,
 				 aes_cbc_tests));
+
+	/*
+	 * Cross check IKE_ALG with legacy code.
+	 *
+	 * Showing that IKE_ALG provides equivalent information is the
+	 * first step to deleting the legacy code.
+	 */
+
+	/* alg_info_esp2sadb() */
+	for (const struct integ_desc **integp = next_integ_desc(NULL);
+	     integp != NULL; integp = next_integ_desc(integp)) {
+		const struct integ_desc *integ = *integp;
+		if (integ->integ_ikev1_ah_id != 0) {
+			passert_ike_alg(&integ->common,
+					alg_info_esp_aa2sadb(integ->common.id[IKEv1_ESP_ID])
+					== integ->integ_ikev1_ah_id);
+		}
+	}
+
+	/* crypto_req_keysize() */
+	for (const struct encrypt_desc **encryptp = next_encrypt_desc(NULL);
+	     encryptp != NULL; encryptp = next_encrypt_desc(encryptp)) {
+		const struct encrypt_desc *encrypt = *encryptp;
+		if (encrypt->common.id[IKEv1_ESP_ID] > 0) {
+			if (encrypt->keylen_omitted) {
+				passert_ike_alg(&encrypt->common,
+						crypto_req_keysize(CRK_ESPorAH,
+								   encrypt->common.id[IKEv1_ESP_ID])
+						== 0);
+			} else {
+				passert_ike_alg(&encrypt->common,
+						crypto_req_keysize(CRK_ESPorAH,
+								   encrypt->common.id[IKEv1_ESP_ID])
+						== encrypt->keydeflen);
+			}
+		}
+	}
+
 }
 
 /*
@@ -64,7 +104,7 @@ void init_crypto(void)
  * The first parameter uses 0 for ESP, and anything above that for
  * IKE major version
  */
-int crypto_req_keysize(enum crk_proto ksproto, int algo)
+unsigned crypto_req_keysize(enum crk_proto ksproto, int algo)
 {
 	switch (ksproto) {
 
@@ -84,10 +124,15 @@ int crypto_req_keysize(enum crk_proto ksproto, int algo)
 		case ESP_AES_GCM_12:
 		case ESP_AES_GCM_16:
 			return AES_GCM_KEY_DEF_LEN;
-		case ESP_CAMELLIAv1:
+		case ESP_CAMELLIA:
 			return CAMELLIA_KEY_DEF_LEN;
+		case ESP_CAMELLIA_CTR:
+			return CAMELLIA_CTR_KEY_DEF_LEN;
 		case ESP_NULL_AUTH_AES_GMAC:
 			return AES_GMAC_KEY_DEF_LEN;
+		case ESP_3DES:
+			/* 0 means send no keylen */
+			return 0;
 		/* private use */
 		case ESP_SERPENT:
 			return SERPENT_KEY_DEF_LEN;

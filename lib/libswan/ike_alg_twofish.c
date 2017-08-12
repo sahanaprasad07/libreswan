@@ -86,6 +86,7 @@ const struct encrypt_desc ike_alg_encrypt_twofish_cbc =
 {
 	.common = {
 		.name = "twofish",
+		.fqn = "TWOFISH_CBC",
 		.names = { "twofish", "twofish_cbc", },
 		.officname = "twofish",
 		.algo_type = IKE_ALG_ENCRYPT,
@@ -107,11 +108,13 @@ const struct encrypt_desc ike_alg_encrypt_twofish_ssh =
 {
 	.common = {
 		.name = "twofish_ssh", /* We don't know if this is right */
+		.fqn = "TWOFISH_SSH", /* We don't know if this is right */
 		.names = { "twofish_ssh", "twofish_cbc_ssh", },
 		.officname = "twofish_ssh", /* We don't know if this is right */
 		.algo_type = IKE_ALG_ENCRYPT,
 		.id = {
 			[IKEv1_OAKLEY_ID] = OAKLEY_TWOFISH_CBC_SSH,
+			[IKEv1_ESP_ID] = -1,
 			[IKEv2_ALG_ID] = IKEv2_ENCR_TWOFISH_CBC_SSH,
 		},
 	},

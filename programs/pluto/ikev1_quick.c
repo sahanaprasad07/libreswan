@@ -258,7 +258,7 @@ static void compute_proto_keymat(struct state *st,
 			needed_len = CAST_KEY_DEF_LEN / BITS_PER_BYTE;
 			break;
 
-		case ESP_CAMELLIAv1:
+		case ESP_CAMELLIA:
 			/* if an attribute is set, then use that! */
 			if (st->st_esp.attrs.transattrs.enckeylen == 0) {
 				needed_len = CAMELLIA_BLOCK_SIZE;
@@ -551,8 +551,8 @@ static bool decode_net_id(struct isakmp_ipsec_id *id,
 	case ID_IPV6_ADDR:
 	{
 		ip_address temp_address;
-		err_t ughmsg = initaddr(id_pbs->cur, pbs_left(
-					  id_pbs), afi->af, &temp_address);
+		err_t ughmsg = initaddr(id_pbs->cur, pbs_left(id_pbs),
+					afi->af, &temp_address);
 
 		if (ughmsg != NULL) {
 			loglog(RC_LOG_SERIOUS,

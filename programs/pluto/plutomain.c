@@ -73,6 +73,7 @@
 #include "fetch.h"
 #include "timer.h"
 #include "ipsecconf/confread.h"
+#include "xauth.h"
 
 #include "crypto.h"
 #include "vendor.h"
@@ -131,7 +132,6 @@ extern bool ocsp_strict;
 extern bool ocsp_enable;
 extern char *curl_iface;
 extern long curl_timeout;
-extern bool pluto_drop_oppo_null;
 extern int bare_shunt_interval;
 
 static char *ocsp_uri = NULL;
@@ -685,6 +685,13 @@ static void usage(void)
 
 int main(int argc, char **argv)
 {
+	/*
+	 * Identify the main thread.
+	 *
+	 * Also used as a reserved thread for code wanting to
+	 * determine if it is running on an aux thread.
+	 */
+	main_thread = pthread_self();
 
 	int lockfd;
 
@@ -1158,7 +1165,7 @@ int main(int argc, char **argv)
 			/* leak */
 			set_cfg_string(&pluto_log_file,
 				cfg->setup.strings[KSF_PLUTOSTDERRLOG]);
-			if(strlen(cfg->setup.strings[KSF_PLUTO_DNSSEC_ROOTKEY_FILE]) > 0) {
+			if (strlen(cfg->setup.strings[KSF_PLUTO_DNSSEC_ROOTKEY_FILE]) > 0) {
 				set_cfg_string(&pluto_dnssec_rootfile,
 						cfg->setup.strings[KSF_PLUTO_DNSSEC_ROOTKEY_FILE]);
 			}
@@ -1740,8 +1747,10 @@ int main(int argc, char **argv)
 #endif
 
 #ifdef USE_DNSSEC
-	unbound_event_init(get_pluto_event_base(), do_dnssec,
-			pluto_dnssec_rootfile, pluto_dnssec_trusted);
+	if (!unbound_event_init(get_pluto_event_base(), do_dnssec,
+		pluto_dnssec_rootfile, pluto_dnssec_trusted)) {
+			exit_pluto(PLUTO_EXIT_UNBOUND_FAIL);
+	}
 #endif
 
 	call_server();

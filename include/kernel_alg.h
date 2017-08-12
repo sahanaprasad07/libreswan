@@ -20,6 +20,7 @@
 #define _KERNEL_ALG_H
 #include "libreswan/pfkeyv2.h"
 
+struct ike_alg; /* forward declaration */
 struct sadb_msg; /* forward definition */
 
 struct kernel_alg_info {
@@ -28,10 +29,10 @@ struct kernel_alg_info {
 	 * ESP.
 	 *
 	 * Because struct encrypt_desc still specifies multiple key
-	 * lengths, ENCKEYLEN is still required.
+	 * lengths, ENCKEYSIZE is still required.
 	 */
 	u_int8_t transid;       /* enum ipsec_cipher_algo: ESP transform (AES, 3DES, etc.)*/
-	u_int32_t enckeylen;    /* keylength for ESP transform (bytes) */
+	size_t enckeysize;      /* keylength for ESP transform (bytes) */
 	/*
 	 * The authentication algorithm; if required by ESP/AH.
 	 */
@@ -55,6 +56,8 @@ struct esp_info;	/* forward declaration */
 struct alg_info_ike;	/* forward declaration */
 struct alg_info_esp;	/* forward declaration */
 
+extern bool kernel_alg_is_ok(const struct ike_alg *alg);
+
 /* ESP interface */
 extern struct sadb_alg *kernel_alg_esp_sadb_alg(int alg_id);
 extern int kernel_alg_esp_ivlen(int alg_id);
@@ -62,8 +65,6 @@ extern int kernel_alg_esp_ivlen(int alg_id);
 /* returns success (NULL) if encrypt alg is present in kernel */
 extern err_t check_kernel_encrypt_alg(int alg_id, unsigned int key_len);
 
-extern bool kernel_alg_esp_ok_final(int ealg, unsigned int key_len, int aalg,
-				    struct alg_info_esp *alg_info);
 /* returns encrypt keylen in BYTES for esp enc alg passed */
 extern int kernel_alg_esp_enc_max_keylen(int alg_id);
 

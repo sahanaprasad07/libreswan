@@ -811,7 +811,7 @@ static bool ikev2_collect_fragment(struct msg_digest *md, struct state *st)
 	return TRUE;
 }
 
-static struct state *process_v2_child_ix (struct msg_digest *md,
+static struct state *process_v2_child_ix(struct msg_digest *md,
 		struct state *pst)
 {
 	struct state *st = NULL; /* child state */
@@ -1105,7 +1105,7 @@ void process_v2_packet(struct msg_digest **mdp)
 		return;
 	}
 
-	if(ix == ISAKMP_v2_CREATE_CHILD_SA && st == NULL) {
+	if (ix == ISAKMP_v2_CREATE_CHILD_SA && st == NULL) {
 		DBG(DBG_CONTROL, DBG_log("dropping message. no IKE state found for this ISAKMP_v2_CREATE_CHILD_SA message"));
 		return;
 	}
@@ -1408,9 +1408,30 @@ bool ikev2_decode_peer_id_and_certs(struct msg_digest *md)
 		return FALSE;
 	}
 
-	if (!ikev2_decode_cert(md)) {
-		libreswan_log("ikev2_decode_cert(md) failed in ikev2_decode_peer_id_and_certs()");
-		return FALSE;
+	lsw_cert_ret ret = ike_decode_cert(md);
+	switch (ret) {
+	case LSW_CERT_NONE:
+		DBG(DBG_X509, DBG_log("X509: no CERT payloads to process"));
+		break;
+	case LSW_CERT_BAD:
+		libreswan_log("X509: CERT payload bogus or revoked");
+		if (initiator) {
+			/* cannot switch connection so fail */
+			return FALSE;
+		}
+		break;
+	case LSW_CERT_MISMATCHED_ID:
+		libreswan_log("X509: CERT payload does not match connection ID");
+		if (initiator) {
+			/* cannot switch connection so fail */
+			return FALSE;
+		}
+		break;
+	case LSW_CERT_ID_OK:
+		DBG(DBG_X509, DBG_log("X509: CERT and ID matches current connection"));
+		break;
+	default:
+		bad_case(ret);
 	}
 
 	/* process any CERTREQ payloads */
@@ -1516,11 +1537,15 @@ bool ikev2_decode_peer_id_and_certs(struct msg_digest *md)
 
 				update_state_connection(md->st, r);
 				c = r;
+				/* redo from scratch so we read and check CERT payload */
+				DBG(DBG_X509, DBG_log("retrying ikev2_decode_peer_id_and_certs() with new conn"));
+				return ikev2_decode_peer_id_and_certs(md);
+
 			} else if (c->spd.that.has_id_wildcards) {
 				duplicate_id(&c->spd.that.id, &peer_id);
 				c->spd.that.has_id_wildcards = FALSE;
 			} else if (fromcert) {
-				DBG(DBG_CONTROL, DBG_log("copying ID for fromcert"));
+				DBG(DBG_X509, DBG_log("copying ID for fromcert"));
 				duplicate_id(&c->spd.that.id, &peer_id);
 			}
 		}
@@ -2307,11 +2332,8 @@ v2_notification_t accept_v2_nonce(struct msg_digest *md,
 	 * note ISAKMP_NEXT_v2Ni == ISAKMP_NEXT_v2Nr
 	 * so when we refer to ISAKMP_NEXT_v2Ni, it might be ISAKMP_NEXT_v2Nr
 	 */
-	pb_stream *nonce_pbs;
-	size_t len;
-
-	nonce_pbs = &md->chain[ISAKMP_NEXT_v2Ni]->pbs;
-	len = pbs_left(nonce_pbs);
+	pb_stream *nonce_pbs = &md->chain[ISAKMP_NEXT_v2Ni]->pbs;
+	size_t len = pbs_left(nonce_pbs);
 
 	/*
 	 * RFC 7296 Section 2.10:

@@ -15,7 +15,7 @@ fi
 
 algparse=$1 ; shift
 dir=$(dirname $0)
-
+export EF_DISABLE_BANNER=1
 set -e
 
 rc=0
@@ -36,12 +36,12 @@ while read file flags ; do
 	rc=1
     fi
 done <<EOF
-algparse.v.txt -v
-algparse.v1.txt -v1
-algparse.v2.txt -v2
-algparse.fips.v.txt -fips -v
-algparse.fips.v1.txt -fips -v1
-algparse.fips.v2.txt -fips -v2
+algparse.v.txt -v -t
+algparse.v1.txt -v1 -t
+algparse.v2.txt -v2 -t
+algparse.fips.v.txt -fips -v -t
+algparse.fips.v1.txt -fips -v1 -t
+algparse.fips.v2.txt -fips -v2 -t
 EOF
 
 exit ${rc}
