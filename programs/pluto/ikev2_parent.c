@@ -156,19 +156,19 @@ static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
         for (i = 0; i < num_of_hash_algo; i++) {
                 switch (ntohs(h_value[i]))  {
                 case IKEv2_HASH_ALGO_SHA1:
-                        st->hash_negotiated |= HASH_ALGO_SHA1;
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA1;
                         break;
                 case IKEv2_HASH_ALGO_SHA2_256:
-                        st->hash_negotiated |= HASH_ALGO_SHA2_256;
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_256;
                         break;
                 case IKEv2_HASH_ALGO_SHA2_384:
-                        st->hash_negotiated |= HASH_ALGO_SHA2_384;
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_384;
                         break;
                 case IKEv2_HASH_ALGO_SHA2_512:
-                        st->hash_negotiated |= HASH_ALGO_SHA2_512;
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_512;
                         break;
                 case IKEv2_HASH_ALGO_IDENTITY:
-                        st->hash_negotiated |= HASH_ALGO_IDENTITY;
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_IDENTITY;
                         break;
                 default:
                         libreswan_log("error, IANA Incompatible hash algo was received");
@@ -2792,7 +2792,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 		break;
 	
 	case IKEv2_AUTH_DIGSIG:
-		if (authby == AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)) {
+		if (authby == AUTH_RSASIG && (pst->hash_negotiated & NEGOTIATE_HASH_ALGO_SHA1)) {
 			if (!out_raw(len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER, &a_pbs,
 					"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption "))
 				return STF_INTERNAL_ERROR;

@@ -888,11 +888,11 @@ enum sa_policy_bits {
 #define POLICY_ESN_YES		LELEM(POLICY_ESN_YES_IX)	/* accept or request ESNyes */
 
 
-#define HASH_ALGO_SHA1		LELEM(IKEv2_HASH_ALGO_SHA1)	/* rfc7427 does responder support SHA1? */
-#define HASH_ALGO_SHA2_256		LELEM(IKEv2_HASH_ALGO_SHA2_256)	/* rfc7427 does responder support SHA2-256?  */
-#define HASH_ALGO_SHA2_384		LELEM(IKEv2_HASH_ALGO_SHA2_384)	/* rfc7427 does responder support SHA2-384? */
-#define HASH_ALGO_SHA2_512		LELEM(IKEv2_HASH_ALGO_SHA2_512)	/* rfc7427 does responder support SHA2-512? */
-#define HASH_ALGO_IDENTITY		LELEM(IKEv2_HASH_ALGO_IDENTITY)	/* rfc4307-bis does responder support IDENTITY? */
+#define NEGOTIATE_HASH_ALGO_SHA1		LELEM(IKEv2_HASH_ALGO_SHA1)	/* rfc7427 does responder support SHA1? */
+#define NEGOTIATE_HASH_ALGO_SHA2_256		LELEM(IKEv2_HASH_ALGO_SHA2_256)	/* rfc7427 does responder support SHA2-256?  */
+#define NEGOTIATE_HASH_ALGO_SHA2_384		LELEM(IKEv2_HASH_ALGO_SHA2_384)	/* rfc7427 does responder support SHA2-384? */
+#define NEGOTIATE_HASH_ALGO_SHA2_512		LELEM(IKEv2_HASH_ALGO_SHA2_512)	/* rfc7427 does responder support SHA2-512? */
+#define NEGOTIATE_HASH_ALGO_IDENTITY		LELEM(IKEv2_HASH_ALGO_IDENTITY)	/* rfc4307-bis does responder support IDENTITY? */
 
 /* Default policy for now is using RSA - this might change to ECC */
 #define POLICY_DEFAULT POLICY_RSASIG
