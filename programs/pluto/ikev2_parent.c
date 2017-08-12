@@ -121,10 +121,10 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
         default:
                 libreswan_log("Invalid Signature Algorithm");
                 return FALSE; 
-        };
+        }
 
         if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
-                                PROTO_v2_RESERVED, &empty_chunk,
+				PROTO_v2_RESERVED, &empty_chunk,
                                 v2N_SIGNATURE_HASH_ALGORITHMS,&hash,
                                 &md->rbody))
                 return FALSE;
@@ -145,13 +145,15 @@ static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
         }
 
         num_of_hash_algo = pbs_left(&p->pbs)/HASH_ALGO_SIZE;
-        if(!(num_of_hash_algo < IKEv2_HASH_ALGO_MAX_NUM)) 
+        if (!(num_of_hash_algo < IKEv2_HASH_ALGO_MAX_NUM)) {
+		libreswan_log("error, we received more hash algorithms than those possible");
+                return FALSE;
+	}
+
+        if (!in_raw(h_value, pbs_left(&p->pbs), (&p->pbs), "hash value"))
                 return FALSE;
 
-        if(!in_raw(h_value, pbs_left(&p->pbs), (&p->pbs),"Storing the Hash algorithms"))
-                return FALSE;
-
-        for(i = 0; i < num_of_hash_algo; i++) {
+        for (i = 0; i < num_of_hash_algo; i++) {
                 switch (ntohs(h_value[i]))  {
                 case IKEv2_HASH_ALGO_SHA1:
                         st->hash_negotiated |= HASH_ALGO_SHA1;
@@ -169,7 +171,7 @@ static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
                         st->hash_negotiated |= HASH_ALGO_IDENTITY;
                         break;
                 default:
-                        libreswan_log("IANA Incompatible hash algo was received");
+                        libreswan_log("error, IANA Incompatible hash algo was received");
                         return FALSE;
                 }         
         }
@@ -509,7 +511,7 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 }
 
 static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
-		struct trans_attrs accepted_oakley)
+	struct trans_attrs accepted_oakley)
 {
 
 	/*
@@ -541,16 +543,15 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
  * Called by ikev2_parent_inI2outR2_tail() and ikev2parent_inR2()
  * Do the actual AUTH payload verification
  */
-    static bool v2_check_auth(enum ikev2_auth_method atype,
-		   struct state *st,
-		   const enum original_role role,
-		   unsigned char idhash_in[MAX_DIGEST_LEN],
-		   pb_stream *pbs,
-		   const enum keyword_authby that_authby)
+static bool v2_check_auth(enum ikev2_auth_method atype,
+	struct state *st,
+	const enum original_role role,
+	unsigned char idhash_in[MAX_DIGEST_LEN],
+	pb_stream *pbs,
+	const enum keyword_authby that_authby)
 {
-    
-    unsigned char check_rsa_sha1_blob[SHA1_RSA_OID_SIZE]={0x0};
-    unsigned char check_length_rsa_sha1_blob[1]= {0};
+	unsigned char check_rsa_sha1_blob[SHA1_RSA_OID_SIZE] = {0x0};
+	unsigned char check_length_rsa_sha1_blob[SIZE_LEN_ALGO_IDENTIFIER]= {0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -610,26 +611,26 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 		}
 		return TRUE;
 	}
-        
+
 	case IKEv2_AUTH_DIGSIG:
-        {
-	    /*
-         * Right now it is only checked if authby = AUTH_RSASIG , in future else if conditions can be added
-         * to check if authby= AUTH_ECDSA , if ECDSA is supported and implemented.
-         */	
+	{
 		if (that_authby != AUTH_RSASIG) {
 			libreswan_log("Peer attempted RSA authentication but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-        if(!in_raw(check_length_rsa_sha1_blob, SIZE_LEN_ALGO_IDENTIFIER, pbs, "Storing the length of the ASN.1 Algorith Identifier sha1WithRSAEncryption"))
-				return FALSE;
-        if(!memeq(check_length_rsa_sha1_blob, len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER))
-				return FALSE;
-        if(!in_raw(check_rsa_sha1_blob, SHA1_RSA_OID_SIZE, pbs, "Storing the ASN.1 Algorith Identifier sha1WithRSAEncryption"))
-				return FALSE;
-        if(!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE))
-				return FALSE;
+		if (!in_raw(check_length_rsa_sha1_blob, SIZE_LEN_ALGO_IDENTIFIER, pbs,
+				"Algorithm length"))
+			return FALSE;
+		if (!memeq(check_length_rsa_sha1_blob, len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER))
+			return FALSE;
+
+		if (!in_raw(check_rsa_sha1_blob, SHA1_RSA_OID_SIZE, pbs,
+				"Identifier value"))
+			return FALSE;
+		if (!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE))
+			return FALSE;
+
 		stf_status authstat = ikev2_verify_rsa_sha1(
 				st,
 				role,
@@ -641,12 +642,12 @@ static stf_status ike2_match_ke_group_and_prop(struct msg_digest *md,
 			return FALSE;
 		}
 		return TRUE;
-        }
+	}
 
 	default:
 	{
 		libreswan_log("authentication method: %s not supported",
-			      enum_name(&ikev2_auth_names, atype));
+				enum_name(&ikev2_auth_names, atype));
 		return FALSE;
 	}
 
@@ -1018,17 +1019,8 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 			return STF_INTERNAL_ERROR;
 	}
 
-	/* 
- 	 * Send SIGNATURE_HASH_ALGORITHMS Notify payload
-     * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2) 
-     * Please Note that you need to check WHEN the Hash algorithm Notfication has to be sent out. It needs to be sent out only when 
-     * authentication is done by Digital Signature algorithm like RSA, DSA, ECDSA etc. Currently we check only for POLICY_RSASIG.
-     * Remember to check for other algorithms too if implemented in future. For example if ECDSA is added in future, check for 
-     * POLICY_ECDSA also.
-     */
-         
+	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
         if (c->policy & POLICY_RSASIG) {  
-		
                 int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
                                 return STF_INTERNAL_ERROR;
@@ -1446,7 +1438,8 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 			st->st_seen_fragvid = TRUE;
 		if (seen_ntfy_hash) {
 			st->st_seen_hashnotify = TRUE;
-			negotiate_hash_algo_from_notification(md);
+			if(!negotiate_hash_algo_from_notification(md))
+				return STF_FAIL;
 		}
 	} else {
 		loglog(RC_LOG_SERIOUS, "Incoming non-duplicate packet already has state?");
@@ -1676,9 +1669,9 @@ static stf_status ikev2_parent_inI1outR1_tail(
 		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
-	
-	if(st->st_seen_hashnotify) {
 
+	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
+	if(st->st_seen_hashnotify) {
 		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
 			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
@@ -1973,8 +1966,8 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
                         break;
 		case v2N_SIGNATURE_HASH_ALGORITHMS:
 			st->st_seen_hashnotify = TRUE;
-			negotiate_hash_algo_from_notification(md);
-			DBG(DBG_CONTROL, DBG_log("seen Hash in IKE response"));
+			if(!negotiate_hash_algo_from_notification(md))
+				return STF_FAIL;
                         break;
 		default:
 			DBG(DBG_CONTROL, DBG_log("%s: received %s but ignoring it",
@@ -2799,20 +2792,23 @@ static stf_status ikev2_send_auth(struct connection *c,
 		break;
 	
 	case IKEv2_AUTH_DIGSIG:
-		if (authby==AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)) {
+		if (authby == AUTH_RSASIG && (pst->hash_negotiated & HASH_ALGO_SHA1)) {
 			if (!out_raw(len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER, &a_pbs,
-                        "Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption "))
+					"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption "))
 				return STF_INTERNAL_ERROR;
+
 			if (!out_raw(sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE, &a_pbs,
-						"OID of  ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
+					"OID of  ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
 				return STF_INTERNAL_ERROR;
+
 			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
-					loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
+				loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 				return STF_FATAL;
 			}
+
 		} else {
-            return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
-        }
+			return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
+		}
 		break;
 	}
     close_output_pbs(&a_pbs);
