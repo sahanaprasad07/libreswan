@@ -89,6 +89,76 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 static int build_ikev2_version(void);
 
+static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy)
+{
+        u_int16_t hash_algo_to_send;
+        chunk_t hash;
+
+        switch (policy) {
+        case POLICY_RSASIG:	
+                hash_algo_to_send = htons(IKEv2_HASH_ALGO_SHA1);
+                setchunk(hash, (void*)&hash_algo_to_send, HASH_ALGO_SIZE);
+                break;
+        default:
+                libreswan_log("Invalid Signature Algorithm");
+                return FALSE; 
+        }
+
+        if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
+				PROTO_v2_RESERVED, &empty_chunk,
+                                v2N_SIGNATURE_HASH_ALGORITHMS,&hash,
+                                &md->rbody))
+                return FALSE;
+        return TRUE;
+}
+
+static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
+{
+        u_int16_t h_value[IKEv2_HASH_ALGO_MAX_NUM] = {0x0};
+        unsigned char num_of_hash_algo = 0;
+        unsigned char i  = 0;
+        struct payload_digest *p;
+        struct state *st=md->st;
+
+        for (p = md->chain[ISAKMP_NEXT_v2N]; p != NULL; p = p->next) {
+                if (p->payload.v2n.isan_type == v2N_SIGNATURE_HASH_ALGORITHMS)
+                        break;
+        }
+
+        num_of_hash_algo = pbs_left(&p->pbs)/HASH_ALGO_SIZE;
+        if (!(num_of_hash_algo < IKEv2_HASH_ALGO_MAX_NUM)) {
+		libreswan_log("error, we received more hash algorithms than those possible");
+                return FALSE;
+	}
+
+        if (!in_raw(h_value, pbs_left(&p->pbs), (&p->pbs), "hash value"))
+                return FALSE;
+
+        for (i = 0; i < num_of_hash_algo; i++) {
+                switch (ntohs(h_value[i]))  {
+                case IKEv2_HASH_ALGO_SHA1:
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA1;
+                        break;
+                case IKEv2_HASH_ALGO_SHA2_256:
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_256;
+                        break;
+                case IKEv2_HASH_ALGO_SHA2_384:
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_384;
+                        break;
+                case IKEv2_HASH_ALGO_SHA2_512:
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_512;
+                        break;
+                case IKEv2_HASH_ALGO_IDENTITY:
+                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_IDENTITY;
+                        break;
+                default:
+                        libreswan_log("error, IANA Incompatible hash algo was received");
+                        return FALSE;
+                }         
+        }
+        return TRUE;
+}
+
 void ikev2_isakamp_established(struct state *st, const struct state_v2_microcode *svm,
 		enum state_kind new_state, enum original_role role)
 {
@@ -452,13 +522,14 @@ static stf_status ikev2_match_ke_group_and_proposal(struct msg_digest *md,
  * Do the actual AUTH payload verification
  */
 static bool v2_check_auth(enum ikev2_auth_method atype,
-		   struct state *st,
-		   const enum original_role role,
-		   unsigned char idhash_in[MAX_DIGEST_LEN],
-		   pb_stream *pbs,
-		   const enum keyword_authby that_authby)
+	struct state *st,
+	const enum original_role role,
+	unsigned char idhash_in[MAX_DIGEST_LEN],
+	pb_stream *pbs,
+	const enum keyword_authby that_authby)
 {
-
+	unsigned char check_rsa_sha1_blob[SHA1_RSA_OID_SIZE] = {0x0};
+	unsigned char check_length_rsa_sha1_blob[SIZE_LEN_ALGO_IDENTIFIER]= {0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -519,10 +590,42 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 		return TRUE;
 	}
 
+	case IKEv2_AUTH_DIGSIG:
+	{
+		if (that_authby != AUTH_RSASIG) {
+			libreswan_log("Peer attempted RSA authentication but we want %s",
+				enum_name(&ikev2_asym_auth_name, that_authby));
+			return FALSE;
+		}
+		if (!in_raw(check_length_rsa_sha1_blob, SIZE_LEN_ALGO_IDENTIFIER, pbs,
+				"Algorithm length"))
+			return FALSE;
+		if (!memeq(check_length_rsa_sha1_blob, len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER))
+			return FALSE;
+
+		if (!in_raw(check_rsa_sha1_blob, SHA1_RSA_OID_SIZE, pbs,
+				"Identifier value"))
+			return FALSE;
+		if (!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE))
+			return FALSE;
+
+		stf_status authstat = ikev2_verify_rsa_sha1(
+				st,
+				role,
+				idhash_in,
+				pbs);
+
+		if (authstat != STF_OK) {
+			libreswan_log("Digital Signature  authentication failed");
+			return FALSE;
+		}
+		return TRUE;
+	}
+
 	default:
 	{
 		libreswan_log("authentication method: %s not supported",
-			      enum_name(&ikev2_auth_names, atype));
+				enum_name(&ikev2_auth_names, atype));
 		return FALSE;
 	}
 
@@ -889,15 +992,17 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 	/* Send NAT-T Notify payloads */
 	{
-		int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
-		struct ikev2_generic in;
-
-		zero(&in);	/* OK: no pointer fields */
-		in.isag_np = np;
-		in.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
+		int np = ISAKMP_NEXT_v2N;
 		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
+
+	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
+        if (c->policy & POLICY_RSASIG) {  
+                int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
+                                return STF_INTERNAL_ERROR;
+        }
 
 	/* From here on, only payloads left are Vendor IDs */
 	if (c->send_vendorid) {
@@ -976,6 +1081,7 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 
 	bool seen_dcookie = FALSE;
 	bool seen_ntfy_frag = FALSE;
+	bool seen_ntfy_hash = FALSE;
 	bool require_dcookie = require_ddos_cookies();
 	struct payload_digest *ntfy;
 
@@ -1004,6 +1110,9 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 			break;
 		case v2N_IKEV2_FRAGMENTATION_SUPPORTED:
 			seen_ntfy_frag = TRUE;
+			break;
+		case v2N_SIGNATURE_HASH_ALGORITHMS:
+			seen_ntfy_hash = TRUE;
 			break;
 		default:
 			DBG(DBG_CONTROLMORE, DBG_log("Received unauthenticated %s notify - ignored",
@@ -1306,6 +1415,11 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 
 		if (seen_ntfy_frag)
 			st->st_seen_fragvid = TRUE;
+		if (seen_ntfy_hash) {
+			st->st_seen_hashnotify = TRUE;
+			if(!negotiate_hash_algo_from_notification(md))
+				return STF_FAIL;
+		}
 	} else {
 		loglog(RC_LOG_SERIOUS, "Incoming non-duplicate packet already has state?");
 		pexpect(st == NULL); /* fire an expect so test cases see it clearly */
@@ -1526,8 +1640,7 @@ static stf_status ikev2_parent_inI1outR1_tail(
 	/* Send NAT-T Notify payloads */
 	{
 		struct ikev2_generic in;
-		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
-			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+		int np = ISAKMP_NEXT_v2N;
 
 		zero(&in);	/* OK: no pointers */
 		in.isag_np = np;
@@ -1535,6 +1648,14 @@ static stf_status ikev2_parent_inI1outR1_tail(
 		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
+
+	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
+	if(st->st_seen_hashnotify) {
+		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
+			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
+			return STF_INTERNAL_ERROR;
+	}	
 
 	/* send CERTREQ  */
 	if (send_certreq) {
@@ -1823,6 +1944,11 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
 			break;
 		case v2N_IKEV2_FRAGMENTATION_SUPPORTED:
 			st->st_seen_fragvid = TRUE;
+                        break;
+		case v2N_SIGNATURE_HASH_ALGORITHMS:
+			st->st_seen_hashnotify = TRUE;
+			if(!negotiate_hash_algo_from_notification(md))
+				return STF_FAIL;
                         break;
 		default:
 			DBG(DBG_CONTROL, DBG_log("%s: received %s but ignoring it",
@@ -2614,7 +2740,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 
 	switch (authby) {
 	case AUTH_RSASIG:
-		a.isaa_type = IKEv2_AUTH_RSA;
+		a.isaa_type = pst->st_seen_hashnotify ? IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA; 
 		break;
 	case AUTH_PSK:
 		a.isaa_type = IKEv2_AUTH_PSK;
@@ -2645,8 +2771,27 @@ static stf_status ikev2_send_auth(struct connection *c,
 			return STF_FATAL;
 		}
 		break;
-	}
+	
+	case IKEv2_AUTH_DIGSIG:
+		if (authby == AUTH_RSASIG && (pst->hash_negotiated & NEGOTIATE_HASH_ALGO_SHA1)) {
+			if (!out_raw(len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER, &a_pbs,
+					"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption "))
+				return STF_INTERNAL_ERROR;
 
+			if (!out_raw(sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE, &a_pbs,
+					"OID of  ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
+				return STF_INTERNAL_ERROR;
+
+			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
+				loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
+				return STF_FATAL;
+			}
+
+		} else {
+			return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
+		}
+		break;
+	}
 	close_output_pbs(&a_pbs);
 	return STF_OK;
 }
@@ -3408,7 +3553,7 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 	enum keyword_authby that_authby = st->st_connection->spd.that.authby;
 
 	passert(that_authby != AUTH_NEVER && that_authby != AUTH_UNSET);
-
+    
 	if (!v2_check_auth(md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type,
 		st, ORIGINAL_RESPONDER, idhash_in, &md->chain[ISAKMP_NEXT_v2AUTH]->pbs,
 		st->st_connection->spd.that.authby))
