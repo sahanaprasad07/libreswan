@@ -1654,31 +1654,43 @@ enum ipsec_comp_algo {
 	/* 64-255 Unassigned */
 };
 
-/* 
+/*
  * RFC 7427 Signature Authentication in the Internet Key Exchange Version 2 (IKEv2)
  * Section 7 :  IANA Considerations
- * https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters.xhtml#hash-algorithms */
+ * https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters.xhtml#hash-algorithms
+ */
 
 enum notify_payload_hash_algorithms {
-	IKEv2_HASH_ALGO_RESERVED = 0,
-	IKEv2_HASH_ALGO_SHA1 = 1,
-	IKEv2_HASH_ALGO_SHA2_256 = 2,
-	IKEv2_HASH_ALGO_SHA2_384 = 3,
-	IKEv2_HASH_ALGO_SHA2_512 = 4, /* RFC 7427 */
-	/* 5-1023 Unassigned */
+	IKEv2_AUTH_HASH_RESERVED = 0,
+	IKEv2_AUTH_HASH_SHA1     = 1,
+	IKEv2_AUTH_HASH_SHA2_256 = 2,
+	IKEv2_AUTH_HASH_SHA2_384 = 3,
+	IKEv2_AUTH_HASH_SHA2_512 = 4,
+	IKEv2_AUTH_HASH_IDENTITY = 5, /* RFC 4307-bis */
+	/* 6-1023 Unassigned */
 	/* 1024-65535 Reserved for private use */
-	IKEv2_HASH_ALGO_IDENTITY = 5, /* RFC 4307-bis */
-	IKEv2_HASH_ALGO_MAX_NUM
+	IKEv2_AUTH_HASH_MAX
 };
 
-#define HASH_ALGO_SIZE 2 /* RFC 7427 - size of every hash algorithm is 2 bytes */
-#define SHA1_RSA_OID_SIZE 15 /* RFC 7427 - size of sha1WithRSAEncryption is 15 bytes */
-#define SIZE_LEN_ALGO_IDENTIFIER 1 /* RFC 7427 - size of length field is 1 byte */
+/* RFC 7427 Hash Algorithm Identifiers (mentioned in notify_payload_hash_algorithms)
+ * that are sent in the Notify payload of the hash algorithm notification are 2 bytes each.
+ */
+
+#define IKEv2_AUTH_HASH_ALGO_SIZE 2
+
+/*
+ * RFC 7427 , section 3 describes the Authentication data format for Digital Signatures.
+ * ASN.1 Length (1 octet) : length of the ASN.1-encoded AlgorithmIdentifier object.
+ * Algorithm Identifier (variable length) - This field contains the AlgorithmIdentifier ASN.1 object.
+ */
+
+#define ASN1_SHA1_RSA_OID_SIZE 15 /* size of algorithm identifier sha1WithRSAEncryption is 15 bytes */
+#define ASN1_LEN_ALGO_IDENTIFIER 1 /* length of ASN.1 Algorithm Identifier(variable length) is 1 byte */
 
 /* 15 byte OID of sha1WithRSAEncryption is specified in RFC 7427 in A.1.1 */
-static const unsigned char sha1_rsa_oid_blob[SHA1_RSA_OID_SIZE] = {0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x05,0x05,0x00};
+static const unsigned char sha1_rsa_oid_blob[ASN1_SHA1_RSA_OID_SIZE] = {0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x05,0x05,0x00};
 
-static const uint8_t len_algo_identifier[SIZE_LEN_ALGO_IDENTIFIER] = {SHA1_RSA_OID_SIZE};
+static const uint8_t len_sha1_rsa_oid_blob[ASN1_LEN_ALGO_IDENTIFIER] = {ASN1_SHA1_RSA_OID_SIZE};
 
 /* Limits on size of RSA moduli.
  * The upper bound matches that of DNSSEC (see RFC 2537).

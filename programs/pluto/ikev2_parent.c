@@ -95,13 +95,12 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
         chunk_t hash;
 
         switch (policy) {
-        case POLICY_RSASIG:	
-                hash_algo_to_send = htons(IKEv2_HASH_ALGO_SHA1);
-                setchunk(hash, (void*)&hash_algo_to_send, HASH_ALGO_SIZE);
+        case POLICY_RSASIG:
+                hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA1);
+                setchunk(hash, (void*)&hash_algo_to_send, IKEv2_AUTH_HASH_ALGO_SIZE);
                 break;
         default:
-                libreswan_log("Invalid Signature Algorithm");
-                return FALSE; 
+		bad_case(policy);
         }
 
         if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
@@ -114,7 +113,7 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
 
 static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
 {
-        u_int16_t h_value[IKEv2_HASH_ALGO_MAX_NUM] = {0x0};
+        u_int16_t h_value[IKEv2_AUTH_HASH_MAX] = {0x0};
         unsigned char num_of_hash_algo = 0;
         unsigned char i  = 0;
         struct payload_digest *p;
@@ -125,36 +124,31 @@ static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
                         break;
         }
 
-        num_of_hash_algo = pbs_left(&p->pbs)/HASH_ALGO_SIZE;
-        if (!(num_of_hash_algo < IKEv2_HASH_ALGO_MAX_NUM)) {
-		libreswan_log("error, we received more hash algorithms than those possible");
-                return FALSE;
-	}
+        num_of_hash_algo = pbs_left(&p->pbs)/IKEv2_AUTH_HASH_ALGO_SIZE;
 
         if (!in_raw(h_value, pbs_left(&p->pbs), (&p->pbs), "hash value"))
-                return FALSE;
+		return FALSE;
 
         for (i = 0; i < num_of_hash_algo; i++) {
                 switch (ntohs(h_value[i]))  {
-                case IKEv2_HASH_ALGO_SHA1:
-                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA1;
+                case IKEv2_AUTH_HASH_SHA1:
+                        st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_SHA1;
                         break;
-                case IKEv2_HASH_ALGO_SHA2_256:
-                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_256;
+                case IKEv2_AUTH_HASH_SHA2_256:
+                        st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_SHA2_256;
                         break;
-                case IKEv2_HASH_ALGO_SHA2_384:
-                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_384;
+                case IKEv2_AUTH_HASH_SHA2_384:
+                        st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_SHA2_384;
                         break;
-                case IKEv2_HASH_ALGO_SHA2_512:
-                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_SHA2_512;
+                case IKEv2_AUTH_HASH_SHA2_512:
+                        st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_SHA2_512;
                         break;
-                case IKEv2_HASH_ALGO_IDENTITY:
-                        st->hash_negotiated |= NEGOTIATE_HASH_ALGO_IDENTITY;
+                case IKEv2_AUTH_HASH_IDENTITY:
+                        st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_IDENTITY;
                         break;
                 default:
-                        libreswan_log("error, IANA Incompatible hash algo was received");
-                        return FALSE;
-                }         
+                        libreswan_log("error, Unimplemented/wrong IANA hash algo was received");
+		}
         }
         return TRUE;
 }
@@ -528,8 +522,8 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	pb_stream *pbs,
 	const enum keyword_authby that_authby)
 {
-	unsigned char check_rsa_sha1_blob[SHA1_RSA_OID_SIZE] = {0x0};
-	unsigned char check_length_rsa_sha1_blob[SIZE_LEN_ALGO_IDENTIFIER]= {0};
+	unsigned char check_rsa_sha1_blob[ASN1_SHA1_RSA_OID_SIZE] = {0x0};
+	unsigned char check_length_rsa_sha1_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -597,16 +591,16 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-		if (!in_raw(check_length_rsa_sha1_blob, SIZE_LEN_ALGO_IDENTIFIER, pbs,
-				"Algorithm length"))
+		if (!in_raw(check_length_rsa_sha1_blob, ASN1_LEN_ALGO_IDENTIFIER, pbs,
+				"Algorithm Identifier length"))
 			return FALSE;
-		if (!memeq(check_length_rsa_sha1_blob, len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER))
+		if (!memeq(check_length_rsa_sha1_blob, len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER))
 			return FALSE;
 
-		if (!in_raw(check_rsa_sha1_blob, SHA1_RSA_OID_SIZE, pbs,
-				"Identifier value"))
+		if (!in_raw(check_rsa_sha1_blob, ASN1_SHA1_RSA_OID_SIZE, pbs,
+				"Algorithm Identifier value"))
 			return FALSE;
-		if (!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE))
+		if (!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, ASN1_SHA1_RSA_OID_SIZE))
 			return FALSE;
 
 		stf_status authstat = ikev2_verify_rsa_sha1(
@@ -992,13 +986,12 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 	/* Send NAT-T Notify payloads */
 	{
-		int np = ISAKMP_NEXT_v2N;
-		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
+		if (!ikev2_out_nat_v2n(ISAKMP_NEXT_v2N, &md->rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
 
 	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
-        if (c->policy & POLICY_RSASIG) {  
+        if (c->policy & POLICY_RSASIG) {
                 int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
                                 return STF_INTERNAL_ERROR;
@@ -1417,8 +1410,8 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 			st->st_seen_fragvid = TRUE;
 		if (seen_ntfy_hash) {
 			st->st_seen_hashnotify = TRUE;
-			if(!negotiate_hash_algo_from_notification(md))
-				return STF_FAIL;
+			if (!negotiate_hash_algo_from_notification(md))
+				return STF_INTERNAL_ERROR;
 		}
 	} else {
 		loglog(RC_LOG_SERIOUS, "Incoming non-duplicate packet already has state?");
@@ -1655,7 +1648,7 @@ static stf_status ikev2_parent_inI1outR1_tail(
 			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
 			return STF_INTERNAL_ERROR;
-	}	
+	}
 
 	/* send CERTREQ  */
 	if (send_certreq) {
@@ -1948,8 +1941,7 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
 		case v2N_SIGNATURE_HASH_ALGORITHMS:
 			st->st_seen_hashnotify = TRUE;
 			if(!negotiate_hash_algo_from_notification(md))
-				return STF_FAIL;
-                        break;
+				return STF_INTERNAL_ERROR;
 		default:
 			DBG(DBG_CONTROL, DBG_log("%s: received %s but ignoring it",
 				enum_name(&state_names, st->st_state),
@@ -2737,22 +2729,24 @@ static stf_status ikev2_send_auth(struct connection *c,
 	}
 
 	a.isaa_np = np;
-
-	switch (authby) {
-	case AUTH_RSASIG:
-		a.isaa_type = pst->st_seen_hashnotify ? IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA; 
-		break;
-	case AUTH_PSK:
-		a.isaa_type = IKEv2_AUTH_PSK;
-		break;
-	case AUTH_NULL:
-		a.isaa_type = IKEv2_AUTH_NULL;
-		break;
-	case AUTH_NEVER:
-	default:
-		bad_case(authby);
+	if (!pst->st_seen_hashnotify) {
+		switch (authby) {
+		case AUTH_RSASIG:
+			a.isaa_type = IKEv2_AUTH_RSA;
+			break;
+		case AUTH_PSK:
+			a.isaa_type = IKEv2_AUTH_PSK;
+			break;
+		case AUTH_NULL:
+			a.isaa_type = IKEv2_AUTH_NULL;
+			break;
+		case AUTH_NEVER:
+		default:
+			bad_case(authby);
+		}
+	} else	{
+		a.isaa_type = IKEv2_AUTH_DIGSIG;
 	}
-
 	if (!out_struct(&a, &ikev2_a_desc, outpbs, &a_pbs))
 		return STF_INTERNAL_ERROR;
 
@@ -2771,27 +2765,33 @@ static stf_status ikev2_send_auth(struct connection *c,
 			return STF_FATAL;
 		}
 		break;
-	
 	case IKEv2_AUTH_DIGSIG:
-		if (authby == AUTH_RSASIG && (pst->hash_negotiated & NEGOTIATE_HASH_ALGO_SHA1)) {
-			if (!out_raw(len_algo_identifier, SIZE_LEN_ALGO_IDENTIFIER, &a_pbs,
-					"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption "))
-				return STF_INTERNAL_ERROR;
+		switch (authby) {
+		case AUTH_RSASIG:
+			if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA1) {
+				if (!out_raw(len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
+						"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
+					return STF_INTERNAL_ERROR;
 
-			if (!out_raw(sha1_rsa_oid_blob, SHA1_RSA_OID_SIZE, &a_pbs,
-					"OID of  ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
-				return STF_INTERNAL_ERROR;
+				if (!out_raw(sha1_rsa_oid_blob, ASN1_SHA1_RSA_OID_SIZE, &a_pbs,
+						"OID of  ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
+					return STF_INTERNAL_ERROR;
 
-			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
-				loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
-				return STF_FATAL;
+				if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
+					loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
+					return STF_FATAL;
+				}
+
+			} else {
+				return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
 			}
-
-		} else {
-			return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
+			break;
+		default:
+			bad_case(authby);
 		}
 		break;
 	}
+
 	close_output_pbs(&a_pbs);
 	return STF_OK;
 }
@@ -3553,7 +3553,7 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 	enum keyword_authby that_authby = st->st_connection->spd.that.authby;
 
 	passert(that_authby != AUTH_NEVER && that_authby != AUTH_UNSET);
-    
+
 	if (!v2_check_auth(md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type,
 		st, ORIGINAL_RESPONDER, idhash_in, &md->chain[ISAKMP_NEXT_v2AUTH]->pbs,
 		st->st_connection->spd.that.authby))

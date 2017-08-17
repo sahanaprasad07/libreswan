@@ -1485,7 +1485,8 @@ bool ikev2_decode_peer_id_and_certs(struct msg_digest *md)
 			authby = AUTH_NULL;
 			break;
 		case IKEv2_AUTH_DIGSIG:
-			authby = AUTH_RSASIG;
+			if (c->policy & POLICY_RSASIG)
+				authby = AUTH_RSASIG;
 			break;
 		case IKEv2_AUTH_NONE:
 		default:
