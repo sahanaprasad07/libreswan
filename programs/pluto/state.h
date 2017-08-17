@@ -289,7 +289,7 @@ struct state {
 	bool st_outbound_done;			/* if true, then outgoing SA already installed */
 
 	const struct oakley_group_desc *st_pfs_group;   /*group for Phase 2 PFS */
-	lset_t hash_negotiated;                 /* Saving the negotiated hash values here */
+	lset_t st_hash_negotiated;              /* Saving the negotiated hash values here */
 	lset_t st_policy;                       /* policy for IPsec SA */
 
 	ip_address st_remoteaddr;               /* where to send packets to */
