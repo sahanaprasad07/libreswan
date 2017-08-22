@@ -1643,7 +1643,7 @@ static stf_status ikev2_parent_inI1outR1_tail(
 	}
 
 	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
-	if(st->st_seen_hashnotify) {
+	if(st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) {
 		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
 			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
@@ -1942,6 +1942,7 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
 			st->st_seen_hashnotify = TRUE;
 			if(!negotiate_hash_algo_from_notification(md))
 				return STF_INTERNAL_ERROR;
+			break;
 		default:
 			DBG(DBG_CONTROL, DBG_log("%s: received %s but ignoring it",
 				enum_name(&state_names, st->st_state),
@@ -2729,10 +2730,9 @@ static stf_status ikev2_send_auth(struct connection *c,
 	}
 
 	a.isaa_np = np;
-	if (!pst->st_seen_hashnotify) {
 		switch (authby) {
 		case AUTH_RSASIG:
-			a.isaa_type = IKEv2_AUTH_RSA;
+		a.isaa_type = (pst->st_seen_hashnotify) ? IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA;
 			break;
 		case AUTH_PSK:
 			a.isaa_type = IKEv2_AUTH_PSK;
@@ -2744,9 +2744,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 		default:
 			bad_case(authby);
 		}
-	} else	{
-		a.isaa_type = IKEv2_AUTH_DIGSIG;
-	}
+
 	if (!out_struct(&a, &ikev2_a_desc, outpbs, &a_pbs))
 		return STF_INTERNAL_ERROR;
 
@@ -2766,8 +2764,6 @@ static stf_status ikev2_send_auth(struct connection *c,
 		}
 		break;
 	case IKEv2_AUTH_DIGSIG:
-		switch (authby) {
-		case AUTH_RSASIG:
 			if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA1) {
 				if (!out_raw(len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
 						"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption"))
@@ -2785,10 +2781,6 @@ static stf_status ikev2_send_auth(struct connection *c,
 			} else {
 				return STF_FAIL + v2N_NO_PROPOSAL_CHOSEN;
 			}
-			break;
-		default:
-			bad_case(authby);
-		}
 		break;
 	}
 
