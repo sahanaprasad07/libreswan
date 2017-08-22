@@ -896,7 +896,6 @@ enum sa_policy_bits {
 #define POLICY_ESN_NO		LELEM(POLICY_ESN_NO_IX)	/* accept or request ESNno */
 #define POLICY_ESN_YES		LELEM(POLICY_ESN_YES_IX)	/* accept or request ESNyes */
 
-
 #define NEGOTIATE_AUTH_HASH_SHA1		LELEM(IKEv2_AUTH_HASH_SHA1)	/* rfc7427 does responder support SHA1? */
 #define NEGOTIATE_AUTH_HASH_SHA2_256		LELEM(IKEv2_AUTH_HASH_SHA2_256)	/* rfc7427 does responder support SHA2-256?  */
 #define NEGOTIATE_AUTH_HASH_SHA2_384		LELEM(IKEv2_AUTH_HASH_SHA2_384)	/* rfc7427 does responder support SHA2-384? */
