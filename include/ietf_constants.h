@@ -9,6 +9,7 @@
  * Copyright (C) 2012-2015 Paul Wouters <pwouters@redhat.com>
  * Copyright (C) 2013 Tuomo Soini <tis@foobar.fi>
  * Copyright (C) 2016 Andrew Cagney <cagney@gnu.org>
+ * Copyright (C) 2017 Sahana Prasad <sahana.prasad07@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -1669,14 +1670,14 @@ enum notify_payload_hash_algorithms {
 	IKEv2_AUTH_HASH_IDENTITY = 5, /* RFC 4307-bis */
 	/* 6-1023 Unassigned */
 	/* 1024-65535 Reserved for private use */
-	IKEv2_AUTH_HASH_MAX
+	IKEv2_AUTH_HASH_ROOF
 };
 
 /* RFC 7427 Hash Algorithm Identifiers (mentioned in notify_payload_hash_algorithms)
  * that are sent in the Notify payload of the hash algorithm notification are 2 bytes each.
  */
 
-#define IKEv2_AUTH_HASH_ALGO_SIZE 2
+#define RFC_7427_HASH_ALGORITHM_VALUE 2
 
 /*
  * RFC 7427 , section 3 describes the Authentication data format for Digital Signatures.

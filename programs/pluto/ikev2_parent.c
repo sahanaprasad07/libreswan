@@ -13,6 +13,7 @@
  * Copyright (C) 2013 David McCullough <ucdevel@gmail.com>
  * Copyright (C) 2013 Matt Rogers <mrogers@redhat.com>
  * Copyright (C) 2015-2017 Andrew Cagney
+ * Copyright (C) 2017 Sahana Prasad <sahana.prasad07@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -97,7 +98,7 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
         switch (policy) {
         case POLICY_RSASIG:
                 hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA1);
-                setchunk(hash, (void*)&hash_algo_to_send, IKEv2_AUTH_HASH_ALGO_SIZE);
+                setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
                 break;
         default:
 		bad_case(policy);
@@ -113,7 +114,7 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
 
 static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
 {
-        u_int16_t h_value[IKEv2_AUTH_HASH_MAX] = {0x0};
+        u_int16_t h_value[IKEv2_AUTH_HASH_ROOF] = {0x0};
         unsigned char num_of_hash_algo = 0;
         unsigned char i  = 0;
         struct payload_digest *p;
@@ -124,7 +125,7 @@ static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
                         break;
         }
 
-        num_of_hash_algo = pbs_left(&p->pbs)/IKEv2_AUTH_HASH_ALGO_SIZE;
+        num_of_hash_algo = pbs_left(&p->pbs) / RFC_7427_HASH_ALGORITHM_VALUE;
 
         if (!in_raw(h_value, pbs_left(&p->pbs), (&p->pbs), "hash value"))
 		return FALSE;
@@ -147,7 +148,7 @@ static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
                         st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_IDENTITY;
                         break;
                 default:
-                        libreswan_log("error, Unimplemented/wrong IANA hash algo was received");
+                        libreswan_log("Received and ignored hash algorithm %d",ntohs(h_value[i]));
 		}
         }
         return TRUE;
@@ -587,7 +588,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	case IKEv2_AUTH_DIGSIG:
 	{
 		if (that_authby != AUTH_RSASIG) {
-			libreswan_log("Peer attempted RSA authentication but we want %s",
+			libreswan_log("Peer attempted Digital Signature RSA authentication but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
@@ -610,7 +611,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 				pbs);
 
 		if (authstat != STF_OK) {
-			libreswan_log("Digital Signature  authentication failed");
+			libreswan_log("Digital Signature authentication failed");
 			return FALSE;
 		}
 		return TRUE;
@@ -986,18 +987,22 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 			return STF_INTERNAL_ERROR;
 	}
 
-	/* Send NAT-T Notify payloads */
-	{
-		if (!ikev2_out_nat_v2n(ISAKMP_NEXT_v2N, &md->rbody, md))
-			return STF_INTERNAL_ERROR;
+	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
+	if (!DBGP(IMPAIR_OMIT_HASH_NOTIFY_REQUEST)) {
+		if (c->policy & POLICY_RSASIG) {
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, md, POLICY_RSASIG))
+				return STF_INTERNAL_ERROR;
+		}
+	} else {
+		libreswan_log("Impair: Skipping the Signature hash notify in IKE_SA_INIT Request");
 	}
 
-	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
-        if (c->policy & POLICY_RSASIG) {
-                int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
-		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
-                                return STF_INTERNAL_ERROR;
-        }
+	/* Send NAT-T Notify payloads */
+	{
+		int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
+			return STF_INTERNAL_ERROR;
+	}
 
 	/* From here on, only payloads left are Vendor IDs */
 	if (c->send_vendorid) {
@@ -1411,9 +1416,14 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 		if (seen_ntfy_frag)
 			st->st_seen_fragvid = TRUE;
 		if (seen_ntfy_hash) {
-			st->st_seen_hashnotify = TRUE;
-			if (!negotiate_hash_algo_from_notification(md))
-				return STF_INTERNAL_ERROR;
+			if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
+				st->st_seen_hashnotify = TRUE;
+				if (!negotiate_hash_algo_from_notification(md))
+					return STF_FATAL;
+			} else {
+				st->st_seen_hashnotify = FALSE;
+				libreswan_log("Impair : Ignoring the Signature hash notify in IKE_SA_INIT Request");
+			}
 		}
 	} else {
 		loglog(RC_LOG_SERIOUS, "Incoming non-duplicate packet already has state?");
@@ -1632,23 +1642,25 @@ static stf_status ikev2_parent_inI1outR1_tail(
 			return STF_INTERNAL_ERROR;
 	}
 
+	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
+	if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
+		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) {
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, md, POLICY_RSASIG))
+				return STF_INTERNAL_ERROR;
+		}
+	} else {
+		libreswan_log("Impair: Not sending out signature hash notify");
+	}
+
 	/* Send NAT-T Notify payloads */
 	{
 		struct ikev2_generic in;
-		int np = ISAKMP_NEXT_v2N;
-
+		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
+                        (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		zero(&in);	/* OK: no pointers */
 		in.isag_np = np;
 		in.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
 		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
-			return STF_INTERNAL_ERROR;
-	}
-
-	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
-	if(st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) {
-		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
-			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
-		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -1941,9 +1953,13 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
 			st->st_seen_fragvid = TRUE;
                         break;
 		case v2N_SIGNATURE_HASH_ALGORITHMS:
-			st->st_seen_hashnotify = TRUE;
-			if(!negotiate_hash_algo_from_notification(md))
-				return STF_INTERNAL_ERROR;
+			if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_RESPONSE)) {
+				st->st_seen_hashnotify = TRUE;
+				if(!negotiate_hash_algo_from_notification(md))
+					return STF_FATAL;
+			} else {
+				libreswan_log("Impair : Ignoring the hash notify in IKE_SA_INIT Response");
+			}
 			break;
 		default:
 			DBG(DBG_CONTROL, DBG_log("%s: received %s but ignoring it",
@@ -2734,7 +2750,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 	a.isaa_np = np;
 		switch (authby) {
 		case AUTH_RSASIG:
-		a.isaa_type = (pst->st_seen_hashnotify) ? IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA;
+			a.isaa_type = (pst->st_seen_hashnotify) ? IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA;
 			break;
 		case AUTH_PSK:
 			a.isaa_type = IKEv2_AUTH_PSK;
