@@ -986,7 +986,9 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 	/* Send NAT-T Notify payloads */
 	{
-		if (!ikev2_out_nat_v2n(ISAKMP_NEXT_v2N, &md->rbody, md))
+		int np = (c->policy & POLICY_RSASIG) ? ISAKMP_NEXT_v2N :
+			((vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE);
+		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -1633,8 +1635,9 @@ static stf_status ikev2_parent_inI1outR1_tail(
 	/* Send NAT-T Notify payloads */
 	{
 		struct ikev2_generic in;
-		int np = ISAKMP_NEXT_v2N;
-
+		int np = (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) ? ISAKMP_NEXT_v2N :
+			(send_certreq ? ISAKMP_NEXT_v2CERTREQ :
+                        (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE);
 		zero(&in);	/* OK: no pointers */
 		in.isag_np = np;
 		in.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
