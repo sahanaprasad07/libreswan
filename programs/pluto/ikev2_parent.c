@@ -113,7 +113,7 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
 
 static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
 {
-        u_int16_t h_value[IKEv2_AUTH_HASH_MAX] = {0x0};
+        u_int16_t h_value[IKEv2_AUTH_HASH_ROOF] = {0x0};
         unsigned char num_of_hash_algo = 0;
         unsigned char i  = 0;
         struct payload_digest *p;

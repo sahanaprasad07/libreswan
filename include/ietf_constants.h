@@ -1669,7 +1669,7 @@ enum notify_payload_hash_algorithms {
 	IKEv2_AUTH_HASH_IDENTITY = 5, /* RFC 4307-bis */
 	/* 6-1023 Unassigned */
 	/* 1024-65535 Reserved for private use */
-	IKEv2_AUTH_HASH_MAX
+	IKEv2_AUTH_HASH_ROOF
 };
 
 /* RFC 7427 Hash Algorithm Identifiers (mentioned in notify_payload_hash_algorithms)
