@@ -1004,6 +1004,13 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 			return STF_INTERNAL_ERROR;
 	}
 
+	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
+        if (c->policy & POLICY_RSASIG) {
+                int np = (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
+                                return STF_INTERNAL_ERROR;
+        }
+
 	/* From here on, only payloads left are Vendor IDs */
 	if (c->send_vendorid) {
 		vids--;
@@ -1661,6 +1668,14 @@ static stf_status ikev2_parent_inI1outR1_tail(
 		in.isag_np = np;
 		in.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
 		if (!ikev2_out_nat_v2n(np, &md->rbody, md))
+			return STF_INTERNAL_ERROR;
+	}
+
+	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
+	if(st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) {
+		int np = send_certreq ? ISAKMP_NEXT_v2CERTREQ :
+			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+		if (!ikev2_out_hash_v2n(np, md, POLICY_RSASIG))
 			return STF_INTERNAL_ERROR;
 	}
 
