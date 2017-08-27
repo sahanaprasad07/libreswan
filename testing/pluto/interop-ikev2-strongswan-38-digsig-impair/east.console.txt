@@ -1,0 +1,25 @@
+/testing/guestbin/swan-prep --x509
+Preparing X.509 files
+east #
+ ipsec start
+Redirecting to: systemctl start ipsec.service
+east #
+ /testing/pluto/bin/wait-until-pluto-started
+east #
+ ipsec auto --add westnet-eastnet-ikev2
+002 added connection description "westnet-eastnet-ikev2"
+east #
+ ipsec whack --debug-all --impair-ignore-hash-notify
+east #
+ echo "initdone"
+initdone
+east #
+ if [ -f /var/run/pluto/pluto.pid ]; then ipsec look ; fi
+east #
+ if [ -f /var/run/charon.pid ]; then strongswan status ; fi
+east #
+east #
+ ../bin/check-for-core.sh
+east #
+ if [ -f /sbin/ausearch ]; then ausearch -r -m avc -ts recent ; fi
+
