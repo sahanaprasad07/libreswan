@@ -112,19 +112,14 @@ static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t policy
         return TRUE;
 }
 
-static bool negotiate_hash_algo_from_notification(struct msg_digest *md)
+static bool negotiate_hash_algo_from_notification(struct payload_digest *p, struct state *st)
 {
         u_int16_t h_value[IKEv2_AUTH_HASH_ROOF] = {0x0};
         unsigned char num_of_hash_algo = 0;
         unsigned char i  = 0;
-        struct payload_digest *p;
-        struct state *st=md->st;
 
-        for (p = md->chain[ISAKMP_NEXT_v2N]; p != NULL; p = p->next) {
-                if (p->payload.v2n.isan_type == v2N_SIGNATURE_HASH_ALGORITHMS)
-                        break;
-        }
-
+	passert(p != NULL);
+	passert(st != NULL);
         num_of_hash_algo = pbs_left(&p->pbs) / RFC_7427_HASH_ALGORITHM_VALUE;
 
         if (!in_raw(h_value, pbs_left(&p->pbs), (&p->pbs), "hash value"))
@@ -1418,7 +1413,12 @@ stf_status ikev2parent_inI1outR1(struct msg_digest *md)
 		if (seen_ntfy_hash) {
 			if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
 				st->st_seen_hashnotify = TRUE;
-				if (!negotiate_hash_algo_from_notification(md))
+				struct payload_digest *p;
+				for (p = md->chain[ISAKMP_NEXT_v2N]; p != NULL; p = p->next) {
+					if (p->payload.v2n.isan_type == v2N_SIGNATURE_HASH_ALGORITHMS)
+					break;
+				}
+				if (!negotiate_hash_algo_from_notification(p,st))
 					return STF_FATAL;
 			} else {
 				st->st_seen_hashnotify = FALSE;
@@ -1955,7 +1955,7 @@ stf_status ikev2parent_inR1outI2(struct msg_digest *md)
 		case v2N_SIGNATURE_HASH_ALGORITHMS:
 			if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_RESPONSE)) {
 				st->st_seen_hashnotify = TRUE;
-				if(!negotiate_hash_algo_from_notification(md))
+				if(!negotiate_hash_algo_from_notification(ntfy,st))
 					return STF_FATAL;
 			} else {
 				libreswan_log("Impair : Ignoring the hash notify in IKE_SA_INIT Response");
