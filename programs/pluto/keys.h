@@ -36,7 +36,8 @@ extern int sign_hash(const struct RSA_private_key *k, const u_char *hash_val,
 
 extern err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 				      const u_char *hash_val, size_t hash_len,
-				      const u_char *sig_val, size_t sig_len);
+				      const u_char *sig_val, size_t sig_len,
+				      enum notify_payload_hash_algorithms rsa_hash_algo);
 
 extern const struct RSA_private_key *get_RSA_private_key(
 	const struct connection *c);
@@ -64,11 +65,13 @@ extern stf_status RSA_check_signature_gen(struct state *st,
 					  const u_char hash_val[MAX_DIGEST_LEN],
 					  size_t hash_len,
 					  const struct packet_byte_stream *sig_pbs,
+					  enum notify_payload_hash_algorithms rsa_hash_algo,
 					  err_t (*try_RSA_signature)(
 						  const u_char hash_val[MAX_DIGEST_LEN],
 						  size_t hash_len,
 						  const struct packet_byte_stream *sig_pbs,
 						  struct pubkey *kr,
-						  struct state *st));
+						  struct state *st,
+						  enum notify_payload_hash_algorithms rsa_hash_algo));
 
 #endif /* _KEYS_H */

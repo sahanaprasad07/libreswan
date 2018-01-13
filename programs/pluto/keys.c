@@ -231,7 +231,8 @@ int sign_hash(const struct RSA_private_key *k,
 
 err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 			       const u_char *hash_val, size_t hash_len,
-			       const u_char *sig_val, size_t sig_len)
+			       const u_char *sig_val, size_t sig_len,
+			       enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	SECKEYPublicKey *publicKey;
 	PRArenaPool *arena;
@@ -256,7 +257,7 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	}
 
 	publicKey->arena = arena;
-	publicKey->keyType = rsaKey;
+	publicKey->keyType = (rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ? rsaKey : rsaPssKey;
 	publicKey->pkcs11Slot = NULL;
 	publicKey->pkcs11ID = CK_INVALID_HANDLE;
 
@@ -341,12 +342,14 @@ struct tac_state {
 	const u_char *hash_val;
 	size_t hash_len;
 	const pb_stream *sig_pbs;
+	enum notify_payload_hash_algorithms rsa_hash_algo;
 
 	err_t (*try_RSA_signature)(const u_char hash_val[MAX_DIGEST_LEN],
 				   size_t hash_len,
 				   const pb_stream *sig_pbs,
 				   struct pubkey *kr,
-				   struct state *st);
+				   struct state *st,
+				   enum notify_payload_hash_algorithms rsa_hash_algo);
 
 	/* state carried between calls */
 	err_t best_ugh; /* most successful failure */
@@ -361,7 +364,7 @@ static bool take_a_crack(struct tac_state *s,
 {
 	err_t ugh =
 		(s->try_RSA_signature)(s->hash_val, s->hash_len, s->sig_pbs,
-				       kr, s->st);
+				       kr, s->st, s->rsa_hash_algo);
 	const struct RSA_public_key *k = &kr->u.rsa;
 
 	s->tried_cnt++;
@@ -391,12 +394,14 @@ stf_status RSA_check_signature_gen(struct state *st,
 				   const u_char hash_val[MAX_DIGEST_LEN],
 				   size_t hash_len,
 				   const pb_stream *sig_pbs,
+				   enum notify_payload_hash_algorithms rsa_hash_algo,
 				   err_t (*try_RSA_signature)(
 					   const u_char hash_val[MAX_DIGEST_LEN],
 					   size_t hash_len,
 					   const pb_stream *sig_pbs,
 					   struct pubkey *kr,
-					   struct state *st))
+					   struct state *st,
+					   enum notify_payload_hash_algorithms rsa_hash_algo))
 {
 	const struct connection *c = st->st_connection;
 	struct tac_state s;
@@ -405,6 +410,7 @@ stf_status RSA_check_signature_gen(struct state *st,
 	s.hash_val = hash_val;
 	s.hash_len = hash_len;
 	s.sig_pbs = sig_pbs;
+	s.rsa_hash_algo = rsa_hash_algo;
 	s.try_RSA_signature = try_RSA_signature;
 
 	s.best_ugh = NULL;

@@ -164,12 +164,22 @@ extern bool ikev2_calculate_rsa_sha1(struct state *st,
 				     unsigned char *idhash,
 				     pb_stream *a_pbs);
 
+extern bool ikev2_calculate_rsa_sha2_256(struct state *st,
+				     enum original_role role,
+				     unsigned char *idhash,
+				     pb_stream *a_pbs);
+
 extern bool ikev2_create_psk_auth(enum keyword_authby authby,
 				     struct state *st,
 				     unsigned char *idhash,
 				     pb_stream *a_pbs);
 
 extern stf_status ikev2_verify_rsa_sha1(struct state *st,
+					enum original_role role,
+					unsigned char *idhash,
+					pb_stream *sig_pbs);
+
+extern stf_status ikev2_verify_rsa_sha2_256(struct state *st,
 					enum original_role role,
 					unsigned char *idhash,
 					pb_stream *sig_pbs);

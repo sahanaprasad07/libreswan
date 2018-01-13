@@ -55,7 +55,9 @@
 #include "keys.h"
 #include "secrets.h"
 #include "ike_alg_sha1.h"
+#include "ike_alg_sha2.h"
 #include "crypt_hash.h"
+#include "ietf_constants.h"
 
 static u_char der_digestinfo[] = {
 	0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e,
@@ -67,7 +69,8 @@ static void ikev2_calculate_sighash(struct state *st,
 				    enum original_role role,
 				    unsigned char *idhash,
 				    chunk_t firstpacket,
-				    unsigned char *sig_octets)
+				    unsigned char *sig_octets, 
+				    enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	const chunk_t *nonce;
 	const char    *nonce_name;
@@ -85,17 +88,18 @@ static void ikev2_calculate_sighash(struct state *st,
 	    DBG_dump_chunk("inputs to hash1 (first packet)", firstpacket);
 	    DBG_dump_chunk(nonce_name, *nonce);
 	    DBG_dump("idhash", idhash, st->st_oakley.ta_prf->prf_output_size));
-
-	struct crypt_hash *ctx = crypt_hash_init(&ike_alg_hash_sha1,
-						 "sighash", DBG_CRYPT);
+	struct crypt_hash *ctx = (rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ? 
+				crypt_hash_init(&ike_alg_hash_sha1,"sighash", DBG_CRYPT) :
+				crypt_hash_init(&ike_alg_hash_sha2_256,"sighash", DBG_CRYPT);
 	crypt_hash_digest_chunk(ctx, "first packet", firstpacket);
 	crypt_hash_digest_chunk(ctx, "nunce", *nonce);
 
 	/* we took the PRF(SK_d,ID[ir]'), so length is prf hash length */
 	crypt_hash_digest_bytes(ctx, "IDHASH", idhash,
 				st->st_oakley.ta_prf->prf_output_size);
-	crypt_hash_final_bytes(&ctx, sig_octets,
-			       ike_alg_hash_sha1.hash_digest_len);
+	(rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ?
+		crypt_hash_final_bytes(&ctx, sig_octets, ike_alg_hash_sha1.hash_digest_len) :
+		crypt_hash_final_bytes(&ctx, sig_octets, ike_alg_hash_sha2_256.hash_digest_len);
 }
 
 bool ikev2_calculate_rsa_sha1(struct state *st,
@@ -118,8 +122,53 @@ bool ikev2_calculate_rsa_sha1(struct state *st,
 
 	ikev2_calculate_sighash(st, role, idhash,
 				st->st_firstpacket_me,
-				signed_octets + der_digestinfo_len);
+				signed_octets + der_digestinfo_len, IKEv2_AUTH_HASH_SHA1);
 	signed_len = der_digestinfo_len + SHA1_DIGEST_SIZE;
+
+	passert(RSA_MIN_OCTETS <= sz && 4 + signed_len < sz &&
+		sz <= RSA_MAX_OCTETS);
+
+	DBG(DBG_CRYPT,
+	    DBG_dump("v2rsa octets", signed_octets, signed_len));
+
+	{
+		/* now generate signature blob */
+		u_char sig_val[RSA_MAX_OCTETS];
+		int shr;
+
+		shr = sign_hash(k, signed_octets, signed_len, sig_val, sz);
+		if (shr == 0)
+			return FALSE;
+		passert(shr == (int)sz);
+		if (!out_raw(sig_val, sz, a_pbs, "rsa signature"))
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+bool ikev2_calculate_rsa_sha2_256(struct state *st,
+			      enum original_role role,
+			      unsigned char *idhash,
+			      pb_stream *a_pbs)
+{
+	unsigned char signed_octets[SHA2_256_DIGEST_SIZE + 16];
+	size_t signed_len;
+	const struct connection *c = st->st_connection;
+	const struct RSA_private_key *k = get_RSA_private_key(c);
+	unsigned int sz;
+
+	if (k == NULL)
+		return FALSE; /* failure: no key to use */
+
+	sz = k->pub.k;
+
+	memcpy(signed_octets, der_digestinfo, der_digestinfo_len);
+
+	ikev2_calculate_sighash(st, role, idhash,
+				st->st_firstpacket_me,
+				signed_octets + der_digestinfo_len, IKEv2_AUTH_HASH_SHA2_256);
+	signed_len = der_digestinfo_len + SHA2_256_DIGEST_SIZE;
 
 	passert(RSA_MIN_OCTETS <= sz && 4 + signed_len < sz &&
 		sz <= RSA_MAX_OCTETS);
@@ -146,7 +195,7 @@ bool ikev2_calculate_rsa_sha1(struct state *st,
 static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  size_t hash_len,
 				  const pb_stream *sig_pbs, struct pubkey *kr,
-				  struct state *st)
+				  struct state *st, enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
@@ -159,8 +208,9 @@ static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 	if (sig_len != k->k)
 		return "1" "SIG length does not match public key length";
 
-	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
-					     sig_len);
+	err_t ugh = (rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ?
+			RSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len, IKEv2_AUTH_HASH_SHA1) :
+			RSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len, IKEv2_AUTH_HASH_SHA2_256);
 	if (ugh != NULL)
 		return ugh;
 
@@ -182,9 +232,29 @@ stf_status ikev2_verify_rsa_sha1(struct state *st,
 	invertrole = (role == ORIGINAL_INITIATOR ? ORIGINAL_RESPONDER : ORIGINAL_INITIATOR);
 
 	ikev2_calculate_sighash(st, invertrole, idhash, st->st_firstpacket_him,
-				calc_hash);
+				calc_hash, IKEv2_AUTH_HASH_SHA1);
 
 	return RSA_check_signature_gen(st, calc_hash, hash_len,
-				       sig_pbs, try_RSA_signature_v2);
+				       sig_pbs, IKEv2_AUTH_HASH_SHA1,
+				       try_RSA_signature_v2);
 
+}
+
+stf_status ikev2_verify_rsa_sha2_256(struct state *st,
+				 enum original_role role,
+				 unsigned char *idhash,
+				 pb_stream *sig_pbs)
+{
+	unsigned char calc_hash[SHA2_256_DIGEST_SIZE];
+	unsigned int hash_len = SHA2_256_DIGEST_SIZE;
+	enum original_role invertrole;
+
+	invertrole = (role == ORIGINAL_INITIATOR ? ORIGINAL_RESPONDER : ORIGINAL_INITIATOR);
+
+	ikev2_calculate_sighash(st, invertrole, idhash, st->st_firstpacket_him,
+				calc_hash, IKEv2_AUTH_HASH_SHA2_256);
+
+	return RSA_check_signature_gen(st, calc_hash, hash_len,
+				       sig_pbs, IKEv2_AUTH_HASH_SHA2_256,
+				       try_RSA_signature_v2);
 }

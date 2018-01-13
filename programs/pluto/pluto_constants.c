@@ -425,6 +425,7 @@ static const char *const ikev2_asym_auth_names[] = {
 	"never",
 	"secret",
 	"rsasig",
+	"rsa-sha2",
 	"null",
 };
 

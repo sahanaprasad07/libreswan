@@ -436,7 +436,8 @@ size_t RSA_sign_hash(struct connection *c,
 static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 				size_t hash_len,
 				const pb_stream *sig_pbs, struct pubkey *kr,
-				struct state *st)
+				struct state *st,
+				enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
@@ -449,7 +450,7 @@ static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 	}
 
 	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
-					sig_len);
+					sig_len, rsa_hash_algo);
 	if (ugh != NULL)
 		return ugh;
 
@@ -470,7 +471,8 @@ static stf_status RSA_check_signature(struct state *st,
 				const pb_stream *sig_pbs)
 {
 	return RSA_check_signature_gen(st, hash_val, hash_len,
-				sig_pbs, try_RSA_signature_v1);
+				sig_pbs, IKEv2_AUTH_HASH_SHA1,
+				try_RSA_signature_v1);
 }
 
 notification_t accept_v1_nonce(struct msg_digest *md, chunk_t *dest,

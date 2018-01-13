@@ -93,7 +93,8 @@ enum keyword_authby {
 	AUTH_NEVER	= 1,
 	AUTH_PSK	= 2,
 	AUTH_RSASIG	= 3,
-	AUTH_NULL	= 4,
+	AUTH_RSA_SHA2   = 4,
+	AUTH_NULL	= 5,
 };
 
 enum keyword_xauthby {
@@ -843,6 +844,7 @@ enum sa_policy_bits {
 	 */
 	POLICY_PSK_IX = 0,
 	POLICY_RSASIG_IX = 1,
+	POLICY_RSA_SHA2_IX,
 	POLICY_AUTH_NEVER_IX,
 	POLICY_AUTH_NULL_IX,
 
@@ -927,6 +929,7 @@ enum sa_policy_bits {
 
 #define POLICY_PSK	LELEM(POLICY_PSK_IX)
 #define POLICY_RSASIG	LELEM(POLICY_RSASIG_IX)
+#define POLICY_RSA_SHA2	LELEM(POLICY_RSA_SHA2_IX)
 #define POLICY_AUTH_NEVER	LELEM(POLICY_AUTH_NEVER_IX)
 #define POLICY_AUTH_NULL LELEM(POLICY_AUTH_NULL_IX)
 #define POLICY_ENCRYPT	LELEM(POLICY_ENCRYPT_IX)	/* must be first of IPSEC policies */
