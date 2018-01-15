@@ -1,0 +1,294 @@
+diff --git a/include/ipsecconf/confread.h b/include/ipsecconf/confread.h
+index d1db46b..f8706f2 100644
+--- a/include/ipsecconf/confread.h
++++ b/include/ipsecconf/confread.h
+@@ -87,6 +87,8 @@ struct starter_conn {
+ 	int_set options_set;
+ 
+ 	lset_t policy;
++	lset_t sighash_policy;
++
+ 	char **alsos;
+ 
+ 	struct starter_end left, right;
+diff --git a/include/ipsecconf/keywords.h b/include/ipsecconf/keywords.h
+index 55a4e62..da6e0c1 100644
+--- a/include/ipsecconf/keywords.h
++++ b/include/ipsecconf/keywords.h
+@@ -109,7 +109,6 @@ enum keyword_numeric_config_field {
+ 	KBF_DPDTIMEOUT,
+ 	KBF_METRIC,
+ 	KBF_PHASE2,
+-	KBF_AUTHBY,
+ 	KBF_KEYEXCHANGE,
+ 	KBF_AUTO,
+ 	KBF_PFS,
+@@ -183,6 +182,7 @@ enum keyword_string_conn_field {
+ 	KSCF_NEXTHOP, /* loose_enum */
+ 	KSCF_UPDOWN,
+ 	KSCF_ID,
++	KSCF_AUTHBY, /* formerly enum */
+ 	KSCF_RSAKEY1, /* loose_enum */
+ 	KSCF_RSAKEY2, /* loose_enum */
+ 	KSCF_CERT,
+diff --git a/include/pluto_constants.h b/include/pluto_constants.h
+index 7544f0e..7ee0222 100644
+--- a/include/pluto_constants.h
++++ b/include/pluto_constants.h
+@@ -971,6 +971,18 @@ enum sa_policy_bits {
+ #define NEGOTIATE_AUTH_HASH_SHA2_512		LELEM(IKEv2_AUTH_HASH_SHA2_512)	/* rfc7427 does responder support SHA2-512? */
+ #define NEGOTIATE_AUTH_HASH_IDENTITY		LELEM(IKEv2_AUTH_HASH_IDENTITY)	/* rfc4307-bis does responder support IDENTITY? */
+ 
++enum sighash_policy_bits {
++	POL_SIGHASH_NONE = 0, /* 0 means no RFC 7427 and plain rsav1.5-sha1 or secret */
++	POL_SIGHASH_SHA2_256_IX = 1,
++	POL_SIGHASH_SHA2_384_IX = 2,
++	POL_SIGHASH_SHA2_512_IX = 3,
++#define POL_SIGHASH_IX_LAST	POL_SIGHASH_SHA2_512_IX
++};
++#define POL_SIGHASH_SHA2_256 LELEM(POL_SIGHASH_SHA2_256_IX)
++#define POL_SIGHASH_SHA2_384 LELEM(POL_SIGHASH_SHA2_384_IX)
++#define POL_SIGHASH_SHA2_512 LELEM(POL_SIGHASH_SHA2_512_IX)
++
++
+ /* Default policy for now is using RSA - this might change to ECC */
+ #define POLICY_DEFAULT POLICY_RSASIG
+ 
+diff --git a/include/whack.h b/include/whack.h
+index e986928..e8f1e7e 100644
+--- a/include/whack.h
++++ b/include/whack.h
+@@ -149,6 +149,7 @@ struct whack_message {
+ 	bool whack_async;
+ 
+ 	lset_t policy;
++	lset_t sighash_policy;
+ 	deltatime_t sa_ike_life_seconds;
+ 	deltatime_t sa_ipsec_life_seconds;
+ 	deltatime_t sa_rekey_margin;
+diff --git a/lib/libipsecconf/confread.c b/lib/libipsecconf/confread.c
+index e7fcf6c..328ace2 100644
+--- a/lib/libipsecconf/confread.c
++++ b/lib/libipsecconf/confread.c
+@@ -1105,29 +1105,15 @@ static bool load_conn(
+ 	if (conn->options_set[KBF_TYPE]) {
+ 		switch ((enum keyword_satype)conn->options[KBF_TYPE]) {
+ 		case KS_TUNNEL:
+-			if (conn->options_set[KBF_AUTHBY] &&
+-				conn->options[KBF_AUTHBY] == POLICY_AUTH_NEVER) {
+-					*perr = "connection type=tunnel must not specify authby=never";
+-					return TRUE;
+-			}
+ 			conn->policy |= POLICY_TUNNEL;
+ 			conn->policy &= ~POLICY_SHUNT_MASK;
+ 			break;
+ 
+ 		case KS_TRANSPORT:
+-			if (conn->options_set[KBF_AUTHBY] &&
+-				conn->options[KBF_AUTHBY] == POLICY_AUTH_NEVER) {
+-					*perr = "connection type=transport must not specify authby=never";
+-					return TRUE;
+-			}
+ 			conn->policy &= ~POLICY_TUNNEL & ~POLICY_SHUNT_MASK;
+ 			break;
+ 
+ 		case KS_PASSTHROUGH:
+-			if (!conn->options_set[KBF_AUTHBY] ||
+-				conn->options[KBF_AUTHBY] != POLICY_AUTH_NEVER) {
+-					*perr = "connection type=passthrough must specify authby=never";
+-			}
+ 			conn->policy &=
+ 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
+ 				  POLICY_TUNNEL | POLICY_RSASIG) &
+@@ -1136,10 +1122,6 @@ static bool load_conn(
+ 			break;
+ 
+ 		case KS_DROP:
+-			if (!conn->options_set[KBF_AUTHBY] ||
+-				conn->options[KBF_AUTHBY] != POLICY_AUTH_NEVER) {
+-					*perr = "connection type=drop must specify authby=never";
+-			}
+ 			conn->policy &=
+ 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
+ 				  POLICY_TUNNEL | POLICY_RSASIG) &
+@@ -1148,10 +1130,6 @@ static bool load_conn(
+ 			break;
+ 
+ 		case KS_REJECT:
+-			if (!conn->options_set[KBF_AUTHBY] ||
+-				conn->options[KBF_AUTHBY] != POLICY_AUTH_NEVER) {
+-					*perr = "connection type=drop must specify authby=never";
+-			}
+ 			conn->policy &=
+ 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
+ 				  POLICY_TUNNEL | POLICY_RSASIG) &
+@@ -1194,10 +1172,10 @@ static bool load_conn(
+ 	KW_POLICY_FLAG(KBF_PFS, POLICY_PFS);
+ 
+ 	/* reset authby= flags */
+-	if (conn->options_set[KBF_AUTHBY]) {
++	if (conn->options_set[KSCF_AUTHBY]) {
+ 
+ 		conn->policy &= ~POLICY_ID_AUTH_MASK;
+-		conn->policy |= conn->options[KBF_AUTHBY];
++		conn->sighash_policy = POL_SIGHASH_NONE;
+ 
+ 	}
+ 
+@@ -1335,6 +1313,45 @@ static bool load_conn(
+ 		}
+ 	}
+ 
++	/* read in the authby string and translate to policy bits and polsighash bits
++	 * this is the symmetric (left+right) version
++	 * there is also leftauthby/rightauthby version stored in 'end'
++	 *
++	 * authby=secret|rsasig|null|never|rsa-HASH
++	 */
++	if (conn->strings_set[KSCF_AUTHBY]) {
++		char *val =  conn->strings[KSCF_AUTHBY];
++
++		/* Supported for IKEv1 and IKEv2 */
++		if (streq(val, "secret"))
++			conn->policy |= POLICY_PSK;
++		else if (streq(val, "rsasig") || streq(val, "rsa"))
++			conn->policy |= POLICY_RSASIG;
++		else if (streq(val, "never"))
++			conn->policy |= POLICY_AUTH_NEVER;
++		/* everything els is only supported for IKEv2 */
++		if (conn->policy & POLICY_IKEV1_ALLOW) {
++			*perr = "connection allowing ikev1 must use authby= of rsasig,secret or never ";
++			return TRUE;
++		}
++		if (streq(val, "null")) {
++			conn->policy |= POLICY_AUTH_NULL;
++		}
++		else if (streq(val, "rsa-sha2") || streq(val, "rsa-sha2_256")) {
++			conn->policy |= POLICY_RSASIG;
++			conn->sighash_policy |= POL_SIGHASH_SHA2_256;
++		} else if (streq(val, "rsa-sha2_384")) {
++			conn->policy |= POLICY_RSASIG;
++			conn->sighash_policy |= POL_SIGHASH_SHA2_384;
++		} else if (streq(val, "rsa-sha2_512")) {
++			conn->policy |= POLICY_RSASIG;
++			conn->sighash_policy |= POL_SIGHASH_SHA2_384;
++		} else {
++			*perr = "connection authby= value is unknown";
++			return TRUE;
++		}
++	}
++
+ 	/*
+ 	 * some options are set as part of our default, but
+ 	 * some make no sense for shunts, so remove those again
+diff --git a/lib/libipsecconf/keywords.c b/lib/libipsecconf/keywords.c
+index 997fb7a..08f874f 100644
+--- a/lib/libipsecconf/keywords.c
++++ b/lib/libipsecconf/keywords.c
+@@ -130,18 +130,6 @@ static const struct keyword_enum_value kw_seccomp_values[] = {
+ static const struct keyword_enum_values kw_seccomp_list = VALUES_INITIALIZER(kw_seccomp_values);
+ #endif
+ 
+-/*
+- * Values for authby={never, rsasig, secret, null}
+- */
+-static const struct keyword_enum_value kw_authby_values[] = {
+-        { "secret",    POLICY_PSK },
+-        { "rsasig",    POLICY_RSASIG },
+-        { "never",     POLICY_AUTH_NEVER },
+-        { "null",      POLICY_AUTH_NULL },
+-        { "secret|rsasig",    POLICY_PSK | POLICY_RSASIG},
+-};
+-static const struct keyword_enum_values kw_authby_list = VALUES_INITIALIZER(kw_authby_values);
+-
+ static const struct keyword_enum_value kw_auth_lr_values[] = {
+        { "never",     AUTH_NEVER },
+        { "secret",    AUTH_PSK },
+@@ -525,7 +513,7 @@ const struct keyword_def ipsec_conf_keywords[] = {
+   { "alsoflip",  kv_conn,  kt_string,  KSCF_ALSOFLIP, NULL, NULL, },
+   { "connaddrfamily",  kv_conn,  kt_enum,  KBF_CONNADDRFAMILY,  &kw_connaddrfamily_list, NULL, },
+   { "type",  kv_conn,  kt_enum,  KBF_TYPE,  &kw_type_list, NULL, },
+-  { "authby",  kv_conn,  kt_enum,  KBF_AUTHBY,  &kw_authby_list, NULL, },
++  { "authby",  kv_conn,  kt_string,  KSCF_AUTHBY, NULL, NULL, },
+   { "keyexchange",  kv_conn,  kt_enum,  KBF_KEYEXCHANGE,  &kw_keyexchange_list, NULL, },
+   { "ikev2",  kv_conn | kv_processed,  kt_enum,  KBF_IKEv2,  &kw_fourvalued_list, NULL, },
+   { "esn",  kv_conn | kv_processed,  kt_enum,  KBF_ESN,  &kw_esn_list, NULL, },
+diff --git a/programs/pluto/connections.c b/programs/pluto/connections.c
+index 0890c88..791f935 100644
+--- a/programs/pluto/connections.c
++++ b/programs/pluto/connections.c
+@@ -1356,6 +1356,10 @@ void add_connection(const struct whack_message *wm)
+ 			return;
+ 		}
+ 	}
++	if (wm->sighash_policy != POL_SIGHASH_NONE && (wm->policy & POLICY_IKEV1_ALLOW)) {
++		loglog(RC_FATAL, "MOBIKE requires ikev2=insist");
++		return;
++	}
+ 
+ 	if (wm->policy & POLICY_MOBIKE) {
+ 		if (!migrate_xfrm_sa_check()) {
+@@ -1484,6 +1488,7 @@ void add_connection(const struct whack_message *wm)
+ 		c->connalias = wm->connalias;
+ 		c->dnshostname = wm->dnshostname;
+ 		c->policy = wm->policy;
++		c->sighash_policy = wm->sighash_policy;
+ 
+ #ifdef FIPS_CHECK
+ 		if (libreswan_fipsmode()) {
+diff --git a/programs/pluto/connections.h b/programs/pluto/connections.h
+index 0b70666..65f463e 100644
+--- a/programs/pluto/connections.h
++++ b/programs/pluto/connections.h
+@@ -222,6 +222,7 @@ struct connection {
+ 	char *name;
+ 	char *connalias;
+ 	lset_t policy;
++	lset_t sighash_policy;
+ 	deltatime_t sa_ike_life_seconds;
+ 	deltatime_t sa_ipsec_life_seconds;
+ 	deltatime_t sa_rekey_margin;
+diff --git a/programs/whack/whack.c b/programs/whack/whack.c
+index dd1732a..bb9b98d 100644
+--- a/programs/whack/whack.c
++++ b/programs/whack/whack.c
+@@ -422,6 +422,9 @@ enum option_enums {
+ 	CD_XAUTHBY,
+ 	CD_XAUTHFAIL,
+ 	CD_NIC_OFFLOAD,
++	CD_RSA_SHA2_256,
++	CD_RSA_SHA2_384,
++	CD_RSA_SHA2_512,
+ 	CD_ESP,
+ #   define CD_LAST CD_ESP	/* last connection description */
+ 
+@@ -661,6 +664,11 @@ static const struct option long_opts[] = {
+ 	{ "ipv4", no_argument, NULL, CD_CONNIPV4 + OO },
+ 	{ "ipv6", no_argument, NULL, CD_CONNIPV6 + OO },
+ 
++	{ "rsa-sha2", no_argument, NULL, CD_RSA_SHA2_256 + OO },
++	{ "rsa-sha2_256", no_argument, NULL, CD_RSA_SHA2_256 + OO },
++	{ "rsa-sha2_384", no_argument, NULL, CD_RSA_SHA2_384 + OO },
++	{ "rsa-sha2_512", no_argument, NULL, CD_RSA_SHA2_512 + OO },
++
+ 	{ "ikelifetime", required_argument, NULL, CD_IKELIFETIME + OO + NUMERIC_ARG },
+ 	{ "ipseclifetime", required_argument, NULL, CD_IPSECLIFETIME + OO + NUMERIC_ARG },
+ 	{ "retransmit-timeout", required_argument, NULL, CD_RETRANSMIT_T + OO + NUMERIC_ARG },
+@@ -1786,6 +1794,16 @@ int main(int argc, char **argv)
+ 			 */
+ 			continue;
+ 
++		case CD_RSA_SHA2_256:
++			msg.sighash_policy = POL_SIGHASH_SHA2_256;
++			continue;
++		case CD_RSA_SHA2_384:
++			msg.sighash_policy = POL_SIGHASH_SHA2_384;
++			continue;
++		case CD_RSA_SHA2_512:
++			msg.sighash_policy = POL_SIGHASH_SHA2_512;
++			continue;
++
+ 		case CD_CONNIPV6:
+ 			if (LHAS(cd_seen, CD_CONNIPV4 - CD_FIRST))
+ 				diag("--ipv6 conflicts with --ipv4");
+

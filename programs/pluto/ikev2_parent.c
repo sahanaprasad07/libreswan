@@ -634,10 +634,15 @@ static bool id_ipseckey_allowed(struct state *st, enum ikev2_auth_method atype)
 
 	if (!c->spd.that.key_from_DNS_on_demand)
 		return FALSE;
+		libreswan_log("authmethod is %u", (c->spd.that.authby));
 
-	if ((c->spd.that.authby == AUTH_RSASIG || c->spd.that.authby == AUTH_RSA_SHA2) &&
+	//if ((c->spd.that.authby == AUTH_RSASIG || c->spd.that.authby == AUTH_RSA_SHA2) &&
+	  //  (id.kind == ID_FQDN || id_is_ipaddr(&id)))
+	if (c->spd.that.authby == AUTH_RSASIG &&
 	    (id.kind == ID_FQDN || id_is_ipaddr(&id)))
 {
+		libreswan_log("came inside id_ipseckey_allowed");
+		libreswan_log("authmethod is %u", (c->spd.that.authby));
 		switch (atype) {
 		case IKEv2_AUTH_RESERVED:
 		case IKEv2_AUTH_DIGSIG:
@@ -2725,6 +2730,8 @@ static stf_status ikev2_send_auth(struct connection *c,
 	case AUTH_RSA_SHA2:
 		a.isaa_type = (pst->st_seen_hashnotify) ?
 			IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA;
+		 loglog(RC_LOG_SERIOUS, "Came inside RSA-SHA2");
+		break;
 	case AUTH_PSK:
 		a.isaa_type = IKEv2_AUTH_PSK;
 		break;
@@ -3541,6 +3548,7 @@ static stf_status ikev2_parent_inI2outR2_tail(struct state *st, struct msg_diges
 		return STF_FAIL + v2N_AUTHENTICATION_FAILED;
 
 	atype = md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type;
+			libreswan_log("authmethod is %u", atype);
 	if (IS_LIBUNBOUND && id_ipseckey_allowed(st, atype)) {
 		ret = idi_ipseckey_fetch(md);
 		if (ret != STF_OK)
@@ -3582,7 +3590,8 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 	/* process AUTH payload */
 
 	enum keyword_authby that_authby = st->st_connection->spd.that.authby;
-
+			libreswan_log("authby is %s",
+				enum_name(&ikev2_asym_auth_name, that_authby));
 	passert(that_authby != AUTH_NEVER && that_authby != AUTH_UNSET);
 
 	if (!v2_check_auth(md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type,

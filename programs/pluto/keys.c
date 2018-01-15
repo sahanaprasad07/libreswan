@@ -239,7 +239,7 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	SECStatus retVal;
 	SECItem nss_n, nss_e;
 	SECItem signature, data;
-
+	libreswan_log("Came inside RSA_signature_verify_nss");
 	/* Converting n and e to form public key in SECKEYPublicKey data structure */
 
 	arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
@@ -416,7 +416,7 @@ stf_status RSA_check_signature_gen(struct state *st,
 	s.best_ugh = NULL;
 	s.tried_cnt = 0;
 	s.tn = s.tried;
-
+	 libreswan_log("Came inside RSA_check_signature_gen");
 	/* try all appropriate Public keys */
 	{
 		realtime_t nw = realnow();

@@ -200,7 +200,7 @@ static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct RSA_public_key *k = &kr->u.rsa;
-
+	libreswan_log("Came inside try_RSA_signature_v2");
 	if (k == NULL)
 		return "1" "no key available"; /* failure: no key to use */
 
@@ -253,7 +253,7 @@ stf_status ikev2_verify_rsa_sha2_256(struct state *st,
 
 	ikev2_calculate_sighash(st, invertrole, idhash, st->st_firstpacket_him,
 				calc_hash, IKEv2_AUTH_HASH_SHA2_256);
-
+         libreswan_log("Came inside ikev2_verify_rsa_sha2_256");
 	return RSA_check_signature_gen(st, calc_hash, hash_len,
 				       sig_pbs, IKEv2_AUTH_HASH_SHA2_256,
 				       try_RSA_signature_v2);
