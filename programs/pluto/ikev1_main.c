@@ -923,7 +923,6 @@ stf_status main_inR1_outI2(struct state *st, struct msg_digest *md)
 
 	request_ke_and_nonce("outI2 KE", st, md,
 			     st->st_oakley.ta_dh,
-			     st->st_import,
 			     main_inR1_outI2_continue);
 	return STF_SUSPEND;
 }
@@ -1085,7 +1084,6 @@ stf_status main_inI2_outR2(struct state *st, struct msg_digest *md)
 
 	request_ke_and_nonce("inI2_outR2 KE", st, md,
 			     st->st_oakley.ta_dh,
-			     st->st_import,
 			     main_inI2_outR2_continue);
 	return STF_SUSPEND;
 }
@@ -1251,8 +1249,7 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 			DBG_log("main inI2_outR2: starting async DH calculation (group=%d)",
 				st->st_oakley.ta_dh->group));
 
-		start_dh_secretiv(dh, st, st->st_import,
-				  ORIGINAL_RESPONDER,
+		start_dh_secretiv(dh, st, ORIGINAL_RESPONDER,
 				  st->st_oakley.ta_dh);
 
 		/* we are calculating in the background, so it doesn't count */
@@ -1544,8 +1541,7 @@ stf_status main_inR2_outI3(struct state *st, struct msg_digest *md)
 
 	dh = new_pcrc(main_inR2_outI3_cryptotail, "aggr outR1 DH",
 		      st, md);
-	start_dh_secretiv(dh, st, st->st_import,
-			  ORIGINAL_INITIATOR,
+	start_dh_secretiv(dh, st, ORIGINAL_INITIATOR,
 			  st->st_oakley.ta_dh);
 	return STF_SUSPEND;
 }
