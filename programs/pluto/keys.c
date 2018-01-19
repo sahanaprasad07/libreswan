@@ -266,7 +266,6 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	(void) rsa_hash_algo;
 	CK_RSA_PKCS_PSS_PARAMS mech;
         SECItem mechItem = { siBuffer, (unsigned char *)&mech, sizeof(mech) };
-	libreswan_log("Came inside RSA_signature_verify_nss");
 	/* Converting n and e to form public key in SECKEYPublicKey data structure */
 
 	arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);

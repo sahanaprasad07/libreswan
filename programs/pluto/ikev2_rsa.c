@@ -272,7 +272,6 @@ stf_status ikev2_verify_rsa_hash(struct state *st,
 
 	ikev2_calculate_sighash(st, invertrole, idhash, st->st_firstpacket_him,
 				calc_hash, rsa_hash_algo);
-
 	return RSA_check_signature_gen(st, calc_hash, hash_len,
 				       sig_pbs, TRUE, rsa_hash_algo,
 				       try_RSA_signature_v2);

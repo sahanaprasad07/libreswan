@@ -3683,7 +3683,6 @@ static stf_status ikev2_parent_inI2outR2_tail(struct state *st, struct msg_diges
 		return STF_FAIL + v2N_AUTHENTICATION_FAILED;
 
 	atype = md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type;
-			libreswan_log("authmethod1 is %u", atype);
 	if (IS_LIBUNBOUND && id_ipseckey_allowed(st, atype)) {
 	atype = md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type;
 			libreswan_log("authmethod2 is %u", atype);
