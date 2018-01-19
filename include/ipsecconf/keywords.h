@@ -109,7 +109,6 @@ enum keyword_numeric_config_field {
 	KBF_DPDTIMEOUT,
 	KBF_METRIC,
 	KBF_PHASE2,
-	KBF_AUTHBY,
 	KBF_KEYEXCHANGE,
 	KBF_AUTO,
 	KBF_PFS,
@@ -133,6 +132,7 @@ enum keyword_numeric_config_field {
 	KBF_PPK,
 	KBF_ESN,
 	KBF_DECAP_DSCP,
+	KBF_NOPMTUDISC,
 	KBF_IKEv2_ALLOW_NARROWING,
 	KBF_IKEv2_PAM_AUTHORIZE,
 	KBF_CONNADDRFAMILY,
@@ -184,6 +184,7 @@ enum keyword_string_conn_field {
 	KSCF_NEXTHOP, /* loose_enum */
 	KSCF_UPDOWN,
 	KSCF_ID,
+	KSCF_AUTHBY, /* formerly enum */
 	KSCF_RSAKEY1, /* loose_enum */
 	KSCF_RSAKEY2, /* loose_enum */
 	KSCF_CERT,

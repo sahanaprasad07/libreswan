@@ -121,6 +121,7 @@ void lsw_nss_shutdown(void)
 static void fill_RSA_public_key(struct RSA_public_key *rsa, SECKEYPublicKey *pubkey)
 {
 	passert(SECKEY_GetPublicKeyType(pubkey) == rsaKey);
+//	passert(SECKEY_GetPublicKeyType(pubkey) == rsaPssKey);
 	rsa->e = clone_secitem_as_chunk(pubkey->u.rsa.publicExponent, "e");
 	rsa->n = clone_secitem_as_chunk(pubkey->u.rsa.modulus, "n");
 	form_keyid(rsa->e, rsa->n, rsa->keyid, &rsa->k);
@@ -178,6 +179,7 @@ struct private_key_stuff *lsw_nss_foreach_private_key_stuff(secret_eval func,
 	     node = PRIVKEY_LIST_NEXT(node)) {
 
 		if (SECKEY_GetPrivateKeyType(node->key) != rsaKey) {
+	//	if (SECKEY_GetPrivateKeyType(node->key) != rsaPssKey) {
 			/* only rsa for now */
 			continue;
 		}

@@ -74,6 +74,8 @@
 #include "lswconf.h"
 #include "lswnss.h"
 #include "secrets.h"
+//#include <pkcs11t.h>
+#include <sechash.h>
 
 static struct secret *pluto_secrets = NULL;
 
@@ -212,9 +214,28 @@ int sign_hash(const struct RSA_private_key *k,
 
 	signature.len = sig_len;
 	signature.data = sig_val;
+	
+	CK_RSA_PKCS_PSS_PARAMS mech;
+	mech.hashAlg = CKM_SHA256;
+        mech.mgf = CKG_MGF1_SHA256;
+        mech.sLen = data.len;
+	SECItem mechItem = { siBuffer, (unsigned char *)&mech, sizeof(mech) };
+
+/*	{
+		SECStatus s = PK11_Sign(privateKey, &signature, &data);
+
+		if (s != SECSuccess) {
+			loglog(RC_LOG_SERIOUS,
+			       "RSA_sign_hash: sign function failed (%d)",
+			       PR_GetError());
+			return 0;
+		}
+	}*/
+
 
 	{
-		SECStatus s = PK11_Sign(privateKey, &signature, &data);
+		SECStatus s = PK11_SignWithMechanism(privateKey, CKM_RSA_PKCS_PSS,
+				&mechItem, &signature, &data);
 
 		if (s != SECSuccess) {
 			loglog(RC_LOG_SERIOUS,
@@ -233,6 +254,7 @@ int sign_hash(const struct RSA_private_key *k,
 err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 			       const u_char *hash_val, size_t hash_len,
 			       const u_char *sig_val, size_t sig_len,
+			       bool version,
 			       enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	SECKEYPublicKey *publicKey;
@@ -240,7 +262,11 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	SECStatus retVal;
 	SECItem nss_n, nss_e;
 	SECItem signature, data;
-
+	(void) version;
+	(void) rsa_hash_algo;
+	CK_RSA_PKCS_PSS_PARAMS mech;
+        SECItem mechItem = { siBuffer, (unsigned char *)&mech, sizeof(mech) };
+	libreswan_log("Came inside RSA_signature_verify_nss");
 	/* Converting n and e to form public key in SECKEYPublicKey data structure */
 
 	arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
@@ -258,7 +284,8 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	}
 
 	publicKey->arena = arena;
-	publicKey->keyType = (rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ? rsaKey : rsaPssKey;
+	//publicKey->keyType = (rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ? rsaKey : rsaPssKey;
+	publicKey->keyType = rsaKey;
 	publicKey->pkcs11Slot = NULL;
 	publicKey->pkcs11ID = CK_INVALID_HANDLE;
 
@@ -296,7 +323,18 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	data.data = alloc_bytes(data.len, "NSS decrypted signature");
 	data.type = siBuffer;
 
-	if (PK11_VerifyRecover(publicKey, &signature, &data,
+	mech.hashAlg = CKM_SHA256;
+        mech.mgf = CKG_MGF1_SHA256;
+        mech.sLen = data.len;
+
+/*	if (PK11_VerifyRecover(publicKey, &signature, &data,
+			       lsw_return_nss_password_file_info()) ==
+	    SECSuccess ) {
+		DBG(DBG_CRYPT,
+		    DBG_dump("NSS RSA verify: decrypted sig: ", data.data,
+			     data.len));
+	} else {*/
+	if (PK11_VerifyWithMechanism(publicKey, CKM_RSA_PKCS_PSS,  &mechItem, &signature, &data,
 			       lsw_return_nss_password_file_info()) ==
 	    SECSuccess ) {
 		DBG(DBG_CRYPT,
@@ -344,6 +382,7 @@ struct tac_state {
 	const u_char *hash_val;
 	size_t hash_len;
 	const pb_stream *sig_pbs;
+	bool version;
 	enum notify_payload_hash_algorithms rsa_hash_algo;
 
 	err_t (*try_RSA_signature)(const u_char hash_val[MAX_DIGEST_LEN],
@@ -351,6 +390,7 @@ struct tac_state {
 				   const pb_stream *sig_pbs,
 				   struct pubkey *kr,
 				   struct state *st,
+				   bool version,
 				   enum notify_payload_hash_algorithms rsa_hash_algo);
 
 	/* state carried between calls */
@@ -366,7 +406,7 @@ static bool take_a_crack(struct tac_state *s,
 {
 	err_t ugh =
 		(s->try_RSA_signature)(s->hash_val, s->hash_len, s->sig_pbs,
-				       kr, s->st, s->rsa_hash_algo);
+				       kr, s->st, s->version, s->rsa_hash_algo);
 	const struct RSA_public_key *k = &kr->u.rsa;
 
 	s->tried_cnt++;
@@ -396,6 +436,7 @@ stf_status RSA_check_signature_gen(struct state *st,
 				   const u_char hash_val[MAX_DIGEST_LEN],
 				   size_t hash_len,
 				   const pb_stream *sig_pbs,
+				   bool version,
 				   enum notify_payload_hash_algorithms rsa_hash_algo,
 				   err_t (*try_RSA_signature)(
 					   const u_char hash_val[MAX_DIGEST_LEN],
@@ -403,6 +444,7 @@ stf_status RSA_check_signature_gen(struct state *st,
 					   const pb_stream *sig_pbs,
 					   struct pubkey *kr,
 					   struct state *st,
+					   bool version,
 					   enum notify_payload_hash_algorithms rsa_hash_algo))
 {
 	const struct connection *c = st->st_connection;
@@ -412,13 +454,13 @@ stf_status RSA_check_signature_gen(struct state *st,
 	s.hash_val = hash_val;
 	s.hash_len = hash_len;
 	s.sig_pbs = sig_pbs;
+	s.version = version;
 	s.rsa_hash_algo = rsa_hash_algo;
 	s.try_RSA_signature = try_RSA_signature;
-
 	s.best_ugh = NULL;
 	s.tried_cnt = 0;
 	s.tn = s.tried;
-
+	 libreswan_log("Came inside RSA_check_signature_gen");
 	/* try all appropriate Public keys */
 	{
 		realtime_t nw = realnow();

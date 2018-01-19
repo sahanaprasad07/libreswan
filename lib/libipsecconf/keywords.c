@@ -130,24 +130,10 @@ static const struct keyword_enum_value kw_seccomp_values[] = {
 static const struct keyword_enum_values kw_seccomp_list = VALUES_INITIALIZER(kw_seccomp_values);
 #endif
 
-/*
- * Values for authby={never, rsasig, rsa-sha2, secret, null}
- */
-static const struct keyword_enum_value kw_authby_values[] = {
-        { "secret",    POLICY_PSK },
-        { "rsasig",    POLICY_RSASIG },
-        { "rsa-sha2",  POLICY_RSA_SHA2 },
-        { "never",     POLICY_AUTH_NEVER },
-        { "null",      POLICY_AUTH_NULL },
-        { "secret|rsasig",    POLICY_PSK | POLICY_RSASIG},
-};
-static const struct keyword_enum_values kw_authby_list = VALUES_INITIALIZER(kw_authby_values);
-
 static const struct keyword_enum_value kw_auth_lr_values[] = {
        { "never",     AUTH_NEVER },
        { "secret",    AUTH_PSK },
        { "rsasig",    AUTH_RSASIG },
-       { "rsa-sha2",  AUTH_RSA_SHA2 },
        { "null",      AUTH_NULL },
  };
 static const struct keyword_enum_values kw_auth_lr_list = VALUES_INITIALIZER(kw_auth_lr_values);
@@ -527,12 +513,13 @@ const struct keyword_def ipsec_conf_keywords[] = {
   { "alsoflip",  kv_conn,  kt_string,  KSCF_ALSOFLIP, NULL, NULL, },
   { "connaddrfamily",  kv_conn,  kt_enum,  KBF_CONNADDRFAMILY,  &kw_connaddrfamily_list, NULL, },
   { "type",  kv_conn,  kt_enum,  KBF_TYPE,  &kw_type_list, NULL, },
-  { "authby",  kv_conn,  kt_enum,  KBF_AUTHBY,  &kw_authby_list, NULL, },
+  { "authby",  kv_conn,  kt_string,  KSCF_AUTHBY, NULL, NULL, },
   { "keyexchange",  kv_conn,  kt_enum,  KBF_KEYEXCHANGE,  &kw_keyexchange_list, NULL, },
   { "ikev2",  kv_conn | kv_processed,  kt_enum,  KBF_IKEv2,  &kw_fourvalued_list, NULL, },
   { "ppk", kv_conn | kv_processed, kt_enum, KBF_PPK, &kw_fourvalued_list, NULL, },
   { "esn",  kv_conn | kv_processed,  kt_enum,  KBF_ESN,  &kw_esn_list, NULL, },
   { "decap-dscp",  kv_conn | kv_processed,  kt_bool,  KBF_DECAP_DSCP,  NULL, NULL, },
+  { "nopmtudisc",  kv_conn | kv_processed,  kt_bool,  KBF_NOPMTUDISC,  NULL, NULL, },
   { "ike_frag",  kv_conn | kv_processed | kv_alias,  kt_enum,  KBF_IKE_FRAG,  &kw_ynf_list, NULL, },  /* obsolete _ */
   { "ike-frag",  kv_conn | kv_processed | kv_alias,  kt_enum,  KBF_IKE_FRAG,  &kw_ynf_list, NULL, },  /* obsolete name */
   { "fragmentation",  kv_conn | kv_processed,  kt_enum,  KBF_IKE_FRAG,  &kw_ynf_list, NULL, },

@@ -50,7 +50,7 @@
 #include "lswlog.h"
 #include "whack.h"
 #include "id.h"
-
+#include "ip_address.h"
 
 static void update_ports(struct whack_message * m)
 {
@@ -546,6 +546,7 @@ static int starter_whack_basic_add_conn(struct starter_config *cfg,
 	msg.r_timeout = deltatime(conn->options[KBF_RETRANSMIT_TIMEOUT]);
 
 	msg.policy = conn->policy;
+	msg.sighash_policy = conn->sighash_policy;
 
 	msg.connalias = conn->connalias;
 

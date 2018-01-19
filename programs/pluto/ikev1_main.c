@@ -85,6 +85,7 @@
 #include "pluto_x509.h"
 
 #include "lswfips.h"
+#include "ip_address.h"
 
 /*
  * Initiate an Oakley Main Mode exchange.
@@ -436,12 +437,14 @@ size_t RSA_sign_hash(struct connection *c,
 static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 				size_t hash_len,
 				const pb_stream *sig_pbs, struct pubkey *kr,
-				struct state *st,
+				struct state *st,bool version,
 				enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct RSA_public_key *k = &kr->u.rsa;
+	(void) version; /* Unused. For ikev2 only */
+	(void) rsa_hash_algo; /* Unused. For ikev2 only */  
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
 	if (sig_len != k->k) {
@@ -450,7 +453,8 @@ static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 	}
 
 	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
-					sig_len, rsa_hash_algo);
+					sig_len, FALSE /* For ikev2 only */,
+					0 /*ikev2 only */);
 	if (ugh != NULL)
 		return ugh;
 
@@ -471,7 +475,7 @@ static stf_status RSA_check_signature(struct state *st,
 				const pb_stream *sig_pbs)
 {
 	return RSA_check_signature_gen(st, hash_val, hash_len,
-				sig_pbs, IKEv2_AUTH_HASH_SHA1,
+				sig_pbs, FALSE /* ikev2 */ , 0 /*ikev2 only */,
 				try_RSA_signature_v1);
 }
 
@@ -586,7 +590,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 	/* random source ports are handled by find_host_connection */
 	c = find_host_connection(
 		&md->iface->ip_addr, pluto_port,
-		&md->sender, md->sender_port,
+		&md->sender, hportof(&md->sender),
 		POLICY_IKEV1_ALLOW, POLICY_AGGRESSIVE | POLICY_IKEV1_ALLOW);
 
 	if (c == NULL) {
@@ -614,7 +618,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 		{
 			struct connection *d = find_host_connection(
 				&md->iface->ip_addr, pluto_port,
-				(ip_address *)NULL, md->sender_port,
+				(ip_address *)NULL, hportof(&md->sender),
 				policy, POLICY_XAUTH | POLICY_AGGRESSIVE | POLICY_IKEV1_ALLOW);
 
 			while (d != NULL) {
@@ -739,7 +743,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 
 		libreswan_log("responding to Main Mode from unknown peer %s on port %u",
 			sensitive_ipstr(&c->spd.that.host_addr, &b),
-			md->sender_port);
+			hportof(&md->sender));
 		DBG(DBG_CONTROL, DBG_dump("  ICOOKIE-DUMP:", st->st_icookie, COOKIE_SIZE));
 	} else {
 		libreswan_log("responding to Main Mode");
@@ -757,6 +761,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 	 */
 	init_out_pbs(&reply_stream, reply_buffer, sizeof(reply_buffer),
 		"reply packet");
+	pb_stream rbody;
 	{
 		struct isakmp_hdr hdr = md->hdr;
 
@@ -769,7 +774,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 		}
 
 		if (!out_struct(&hdr, &isakmp_hdr_desc, &reply_stream,
-					&md->rbody))
+					&rbody))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -796,7 +801,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 		r_sa.isasa_doi = ISAKMP_DOI_IPSEC;
 
 		r_sa.isasa_np = numvidtosend ? ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
-		if (!out_struct(&r_sa, &isakmp_sa_desc, &md->rbody, &r_sa_pbs))
+		if (!out_struct(&r_sa, &isakmp_sa_desc, &rbody, &r_sa_pbs))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -812,7 +817,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 	if (c->send_vendorid) {
 		int np = --numvidtosend ? ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
 
-		if (!ikev1_out_generic_raw(np, &isakmp_vendor_id_desc, &md->rbody,
+		if (!ikev1_out_generic_raw(np, &isakmp_vendor_id_desc, &rbody,
 					pluto_vendorid, strlen(pluto_vendorid), "Vendor ID"))
 			return STF_INTERNAL_ERROR;
 	}
@@ -824,7 +829,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 		 */
 		int np = --numvidtosend ? ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
 
-		if (!out_vid(np, &md->rbody, VID_MISC_DPD))
+		if (!out_vid(np, &rbody, VID_MISC_DPD))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -833,7 +838,7 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 		int np = --numvidtosend > 0 ?
 			ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
 
-		if (!out_vid(np, &md->rbody, VID_IKE_FRAGMENTATION))
+		if (!out_vid(np, &rbody, VID_IKE_FRAGMENTATION))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -844,20 +849,20 @@ stf_status main_inI1_outR1(struct state *st, struct msg_digest *md)
 	if (c->spd.this.xauth_server || c->spd.this.xauth_client) {
 		int np = --numvidtosend ? ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
 
-		if (!out_vid(np, &md->rbody, VID_MISC_XAUTH))
+		if (!out_vid(np, &rbody, VID_MISC_XAUTH))
 			return STF_INTERNAL_ERROR;
 	}
 
 	if (st->hidden_variables.st_nat_traversal != LEMPTY) {
 		int np = --numvidtosend ? ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
 
-		if (!out_vid(np, &md->rbody, md->quirks.qnat_traversal_vid))
+		if (!out_vid(np, &rbody, md->quirks.qnat_traversal_vid))
 			return STF_INTERNAL_ERROR;
 	}
 
 	passert(numvidtosend == 0);
 
-	if (!close_message(&md->rbody, st))
+	if (!close_message(&rbody, st))
 		return STF_INTERNAL_ERROR;
 
 	/* save initiator SA for HASH */
@@ -976,17 +981,18 @@ static stf_status main_inR1_outI2_tail(struct state *st, struct msg_digest *md,
 	 * We can't leave this to comm_handle() because the isa_np
 	 * depends on the type of Auth (eventually).
 	 */
+	pb_stream rbody;
 	ikev1_init_out_pbs_echo_hdr(md, FALSE, ISAKMP_NEXT_KE,
 				    &reply_stream, reply_buffer, sizeof(reply_buffer),
-				    &md->rbody);
+				    &rbody);
 
 	/* KE out */
 	if (!ikev1_ship_KE(st, r, &st->st_gi,
-			&md->rbody, ISAKMP_NEXT_NONCE))
+			&rbody, ISAKMP_NEXT_NONCE))
 		return STF_INTERNAL_ERROR;
 
 	/* Ni out */
-	if (!ikev1_ship_nonce(&st->st_ni, r, &md->rbody,
+	if (!ikev1_ship_nonce(&st->st_ni, r, &rbody,
 				(cur_debugging &
 					IMPAIR_BUST_MI2) ? ISAKMP_NEXT_VID :
 				ISAKMP_NEXT_NONE,
@@ -1006,7 +1012,7 @@ static stf_status main_inR1_outI2_tail(struct state *st, struct msg_digest *md,
 		 * in the below call to ikev1_nat_traversal_add_natd()
 		 */
 		if (!ikev1_out_generic(ISAKMP_NEXT_NONE, &isakmp_vendor_id_desc,
-					&md->rbody,
+					&rbody,
 					&vid_pbs))
 			return STF_INTERNAL_ERROR;
 
@@ -1020,12 +1026,12 @@ static stf_status main_inR1_outI2_tail(struct state *st, struct msg_digest *md,
 	if (st->hidden_variables.st_nat_traversal != LEMPTY) {
 		DBG(DBG_NATT,
 			DBG_log("NAT-T found (implies NAT_T_WITH_NATD)"));
-		if (!ikev1_nat_traversal_add_natd(ISAKMP_NEXT_NONE, &md->rbody, md))
+		if (!ikev1_nat_traversal_add_natd(ISAKMP_NEXT_NONE, &rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
 
 	/* finish message */
-	if (!close_message(&md->rbody, st))
+	if (!close_message(&rbody, st))
 		return STF_INTERNAL_ERROR;
 
 	/* Reinsert the state, using the responder cookie we just received */
@@ -1140,13 +1146,14 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 		st->st_connection->spd.that.ca.ptr != NULL;
 
 	/* HDR out */
+	pb_stream rbody;
 	ikev1_init_out_pbs_echo_hdr(md, FALSE, ISAKMP_NEXT_KE,
 				    &reply_stream, reply_buffer, sizeof(reply_buffer),
-				    &md->rbody);
+				    &rbody);
 
 	/* KE out */
 	passert(ikev1_ship_KE(st, r, &st->st_gr,
-			      &md->rbody, ISAKMP_NEXT_NONCE));
+			      &rbody, ISAKMP_NEXT_NONCE));
 
 	{
 		/* Nr out */
@@ -1158,7 +1165,7 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 		if (send_cr)
 			next_payload = ISAKMP_NEXT_CR;
 		if (!ikev1_ship_nonce(&st->st_nr, r,
-					&md->rbody,
+					&rbody,
 					next_payload,
 					"Nr"))
 			return STF_INTERNAL_ERROR;
@@ -1172,7 +1179,7 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 
 			if (!ikev1_out_generic((send_cr) ? ISAKMP_NEXT_CR :
 					ISAKMP_NEXT_NONE,
-					&isakmp_vendor_id_desc, &md->rbody,
+					&isakmp_vendor_id_desc, &rbody,
 					&vid_pbs))
 				return STF_INTERNAL_ERROR;
 
@@ -1188,7 +1195,7 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 		if (st->st_connection->kind == CK_PERMANENT) {
 			if (!ikev1_build_and_ship_CR(CERT_X509_SIGNATURE,
 						st->st_connection->spd.that.ca,
-						&md->rbody, ISAKMP_NEXT_NONE))
+						&rbody, ISAKMP_NEXT_NONE))
 				return STF_INTERNAL_ERROR;
 		} else {
 			generalName_t *ca = collect_rw_ca_candidates(md);
@@ -1200,7 +1207,7 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 					if (!ikev1_build_and_ship_CR(
 							CERT_X509_SIGNATURE,
 							gn->name,
-							&md->rbody,
+							&rbody,
 							gn->next ==NULL ?
 							  ISAKMP_NEXT_NONE :
 							  ISAKMP_NEXT_CR))
@@ -1210,7 +1217,7 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 			} else {
 				if (!ikev1_build_and_ship_CR(CERT_X509_SIGNATURE,
 							empty_chunk,
-							&md->rbody,
+							&rbody,
 							ISAKMP_NEXT_NONE))
 					return STF_INTERNAL_ERROR;
 			}
@@ -1218,12 +1225,12 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
 	}
 
 	if (st->hidden_variables.st_nat_traversal != LEMPTY) {
-		if (!ikev1_nat_traversal_add_natd(ISAKMP_NEXT_NONE, &md->rbody, md))
+		if (!ikev1_nat_traversal_add_natd(ISAKMP_NEXT_NONE, &rbody, md))
 			return STF_INTERNAL_ERROR;
 	}
 
 	/* finish message */
-	if (!close_message(&md->rbody, st))
+	if (!close_message(&rbody, st))
 		return STF_INTERNAL_ERROR;
 
 	/*
@@ -1271,7 +1278,8 @@ stf_status main_inI2_outR2_tail(struct state *st, struct msg_digest *md,
  *	    --> HDR*, HASH_I
  */
 static stf_status main_inR2_outI3_continue(struct msg_digest *md,
-					struct pluto_crypto_req *r)
+					   pb_stream *rbody,
+					   struct pluto_crypto_req *r)
 {
 	struct state *const st = md->st;
 	int auth_payload = st->st_oakley.auth == OAKLEY_PRESHARED_KEY ?
@@ -1381,7 +1389,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 			(send_cert) ? ISAKMP_NEXT_CERT : auth_payload;
 		if (!out_struct(&id_hd,
 				&isakmp_ipsec_identification_desc,
-				&md->rbody,
+				rbody,
 				&id_pbs) ||
 		    !out_chunk(id_b, &id_pbs, "my identity")) {
 			free_auth_chain(auth_chain, chain_len);
@@ -1404,7 +1412,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 
 		if (!ikev1_ship_CERT(mycert.ty,
 				   get_dercert_from_nss_cert(mycert.u.nss_cert),
-				   &md->rbody, np)) {
+				   rbody, np)) {
 			free_auth_chain(auth_chain, chain_len);
 			return STF_INTERNAL_ERROR;
 		}
@@ -1414,7 +1422,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 			libreswan_log("I am sending a CA cert chain");
 			if (!ikev1_ship_chain(auth_chain,
 					      chain_len,
-					      &md->rbody,
+					      rbody,
 					      mycert.ty,
 					      send_cr ? ISAKMP_NEXT_CR :
 							ISAKMP_NEXT_SIG)) {
@@ -1429,8 +1437,8 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 	if (send_cr) {
 		libreswan_log("I am sending a certificate request");
 		if (!ikev1_build_and_ship_CR(mycert.ty,
-					st->st_connection->spd.that.ca,
-					&md->rbody, ISAKMP_NEXT_SIG))
+					     st->st_connection->spd.that.ca,
+					     rbody, ISAKMP_NEXT_SIG))
 			return STF_INTERNAL_ERROR;
 	}
 
@@ -1444,7 +1452,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 			if (!ikev1_out_generic_raw(initial_contact ? ISAKMP_NEXT_N :
 						ISAKMP_NEXT_NONE,
 						&isakmp_hash_desc,
-						&md->rbody,
+						rbody,
 						hash_val, hash_len, "HASH_I"))
 				return STF_INTERNAL_ERROR;
 		} else {
@@ -1463,7 +1471,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 			if (!ikev1_out_generic_raw(initial_contact ? ISAKMP_NEXT_N :
 						ISAKMP_NEXT_NONE,
 						&isakmp_signature_desc,
-						&md->rbody,
+						rbody,
 						sig_val,
 						sig_len,
 						"SIG_I"))
@@ -1483,7 +1491,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 		isan.isan_protoid = PROTO_ISAKMP;
 		isan.isan_spisize = COOKIE_SIZE * 2;
 		isan.isan_type = IPSEC_INITIAL_CONTACT;
-		if (!out_struct(&isan, &isakmp_notification_desc, &md->rbody,
+		if (!out_struct(&isan, &isakmp_notification_desc, rbody,
 					&notify_pbs))
 			return STF_INTERNAL_ERROR;
 
@@ -1504,7 +1512,7 @@ static stf_status main_inR2_outI3_continue(struct msg_digest *md,
 	/* encrypt message, except for fixed part of header */
 
 	/* st_new_iv was computed by generate_skeyids_iv (??? DOESN'T EXIST) */
-	if (!encrypt_message(&md->rbody, st))
+	if (!encrypt_message(rbody, st))
 		return STF_INTERNAL_ERROR; /* ??? we may be partly committed */
 
 	return STF_OK;
@@ -1520,10 +1528,12 @@ static void main_inR2_outI3_cryptotail(struct state *st, struct msg_digest *md,
 			st->st_serialno));
 
 	passert(md != NULL);	/* ??? how would this fail? */
+
+	pb_stream rbody;
 	ikev1_init_out_pbs_echo_hdr(md, TRUE, ISAKMP_NEXT_ID,
 				    &reply_stream, reply_buffer, sizeof(reply_buffer),
-				    &md->rbody);
-	stf_status e = main_inR2_outI3_continue(md, r);
+				    &rbody);
+	stf_status e = main_inR2_outI3_continue(md, &rbody, r);
 	complete_v1_state_transition(&md, e);
 	release_any_md(&md);
 }
@@ -1717,9 +1727,10 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 	 * If auth were PKE_AUTH or RPKE_AUTH, ISAKMP_NEXT_HASH would
 	 * be first payload.
 	 */
+	pb_stream rbody;
 	ikev1_init_out_pbs_echo_hdr(md, TRUE, ISAKMP_NEXT_ID,
 				    &reply_stream, reply_buffer, sizeof(reply_buffer),
-				    &md->rbody);
+				    &rbody);
 
 	auth_payload = st->st_oakley.auth == OAKLEY_PRESHARED_KEY ?
 		ISAKMP_NEXT_HASH : ISAKMP_NEXT_SIG;
@@ -1737,7 +1748,7 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 		id_hd.isaiid_np =
 			(send_cert) ? ISAKMP_NEXT_CERT : auth_payload;
 		if (!out_struct(&id_hd, &isakmp_ipsec_identification_desc,
-					&md->rbody, &r_id_pbs) ||
+					&rbody, &r_id_pbs) ||
 			!out_chunk(id_b, &r_id_pbs, "my identity")) {
 			free_auth_chain(auth_chain, chain_len);
 			return STF_INTERNAL_ERROR;
@@ -1754,7 +1765,7 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 		libreswan_log("I am sending my cert");
 		if (!ikev1_ship_CERT(mycert.ty,
 				   get_dercert_from_nss_cert(mycert.u.nss_cert),
-				   &md->rbody, npp)) {
+				   &rbody, npp)) {
 			free_auth_chain(auth_chain, chain_len);
 			return STF_INTERNAL_ERROR;
 		}
@@ -1762,7 +1773,7 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 		if (npp == ISAKMP_NEXT_CERT) {
 			libreswan_log("I am sending a CA cert chain");
 			if (!ikev1_ship_chain(auth_chain, chain_len,
-							  &md->rbody,
+							  &rbody,
 							  mycert.ty,
 							  ISAKMP_NEXT_SIG)) {
 				free_auth_chain(auth_chain, chain_len);
@@ -1785,7 +1796,7 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 
 		if (auth_payload == ISAKMP_NEXT_HASH) {
 			/* HASH_R out */
-			if (!ikev1_out_generic_raw(np, &isakmp_hash_desc, &md->rbody,
+			if (!ikev1_out_generic_raw(np, &isakmp_hash_desc, &rbody,
 						hash_val, hash_len, "HASH_R"))
 				return STF_INTERNAL_ERROR;
 		} else {
@@ -1802,20 +1813,20 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 			}
 
 			if (!ikev1_out_generic_raw(np, &isakmp_signature_desc,
-						&md->rbody, sig_val, sig_len,
+						&rbody, sig_val, sig_len,
 						"SIG_R"))
 				return STF_INTERNAL_ERROR;
 		}
 	}
 
 	if (st->st_connection->policy & POLICY_IKEV2_ALLOW) {
-		if (!out_vid(ISAKMP_NEXT_NONE, &md->rbody, VID_MISC_IKEv2))
+		if (!out_vid(ISAKMP_NEXT_NONE, &rbody, VID_MISC_IKEv2))
 			return STF_INTERNAL_ERROR;
 	}
 
 	/* encrypt message, sans fixed part of header */
 
-	if (!encrypt_message(&md->rbody, st))
+	if (!encrypt_message(&rbody, st))
 		return STF_INTERNAL_ERROR; /* ??? we may be partly committed */
 
 	/* Last block of Phase 1 (R3), kept for Phase 2 IV generation */

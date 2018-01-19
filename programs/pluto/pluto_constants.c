@@ -389,6 +389,7 @@ const char *const sa_policy_bit_names[] = {
 	"PFS",
 	"DISABLEARRIVALCHECK",
 	"DECAP_DSCP",
+	"NOPMTUDISC",
 	"SHUNT0",
 	"SHUNT1",
 	"FAIL0",
@@ -427,7 +428,6 @@ static const char *const ikev2_asym_auth_names[] = {
 	"never",
 	"secret",
 	"rsasig",
-	"rsa-sha2",
 	"null",
 };
 

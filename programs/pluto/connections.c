@@ -87,6 +87,7 @@
 #include "lswfips.h"
 #include "crypto.h"
 #include "kernel_netlink.h"
+#include "ip_address.h"
 
 struct connection *connections = NULL;
 
@@ -1356,6 +1357,10 @@ void add_connection(const struct whack_message *wm)
 			return;
 		}
 	}
+	if (wm->sighash_policy != POL_SIGHASH_NONE && (wm->policy & POLICY_IKEV1_ALLOW)) {
+		loglog(RC_FATAL, "MOBIKE requires ikev2=insist");
+		return;
+	}
 
 	if (wm->policy & POLICY_MOBIKE) {
 		if (!migrate_xfrm_sa_check()) {
@@ -1484,6 +1489,10 @@ void add_connection(const struct whack_message *wm)
 		c->connalias = wm->connalias;
 		c->dnshostname = wm->dnshostname;
 		c->policy = wm->policy;
+		c->sighash_policy = wm->sighash_policy;
+		loglog(RC_FATAL,
+			"sighash in connections is  %ld",
+				c->sighash_policy);
 
 #ifdef FIPS_CHECK
 		if (libreswan_fipsmode()) {
@@ -3672,7 +3681,7 @@ static struct connection *fc_try(const struct connection *c,
 	if (best == NULL) {
 		if (virtualwhy != NULL) {
 			libreswan_log(
-				"peer proposal was reject in a virtual connection policy: %s",
+				"peer proposal was rejected in a virtual connection policy: %s",
 				virtualwhy);
 		}
 	}

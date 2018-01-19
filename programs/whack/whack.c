@@ -50,6 +50,7 @@
 #include "lswlog.h"
 #include "defs.h"
 #include "whack.h"
+#include "ip_address.h"
 
 #include "ipsecconf/confread.h" /* for DEFAULT_UPDOWN */
 #include <net/if.h> /* for IFNAMSIZ */
@@ -104,7 +105,7 @@ static void help(void)
 		"	[--ikev1-allow | --ikev2-allow | --ikev2-propose] \\\n"
 		"	[--allow-narrowing] [--sareftrack] [--sarefconntrack] \\\n"
 		"	[--ikefrag-allow | --ikefrag-force] [--no-ikepad] \\\n"
-		"	[--esn ] [--no-esn] [--decap-dscp] [--mobike] \\\n"
+		"	[--esn ] [--no-esn] [--decap-dscp] [--nopmtudisc] [--mobike] \\\n"
 #ifdef HAVE_NM
 		"	[--nm-configured] \\\n"
 #endif
@@ -422,6 +423,9 @@ enum option_enums {
 	CD_XAUTHBY,
 	CD_XAUTHFAIL,
 	CD_NIC_OFFLOAD,
+	CD_RSA_SHA2_256,
+	CD_RSA_SHA2_384,
+	CD_RSA_SHA2_512,
 	CD_ESP,
 #   define CD_LAST CD_ESP	/* last connection description */
 
@@ -661,6 +665,11 @@ static const struct option long_opts[] = {
 	{ "ipv4", no_argument, NULL, CD_CONNIPV4 + OO },
 	{ "ipv6", no_argument, NULL, CD_CONNIPV6 + OO },
 
+	{ "rsa-sha2", no_argument, NULL, CD_RSA_SHA2_256 + OO },
+	{ "rsa-sha2_256", no_argument, NULL, CD_RSA_SHA2_256 + OO },
+	{ "rsa-sha2_384", no_argument, NULL, CD_RSA_SHA2_384 + OO },
+	{ "rsa-sha2_512", no_argument, NULL, CD_RSA_SHA2_512 + OO },
+
 	{ "ikelifetime", required_argument, NULL, CD_IKELIFETIME + OO + NUMERIC_ARG },
 	{ "ipseclifetime", required_argument, NULL, CD_IPSECLIFETIME + OO + NUMERIC_ARG },
 	{ "retransmit-timeout", required_argument, NULL, CD_RETRANSMIT_T + OO + NUMERIC_ARG },
@@ -698,6 +707,7 @@ static const struct option long_opts[] = {
 	PS("no-esn", ESN_NO),
 	PS("esn", ESN_YES),
 	PS("decap-dscp", DECAP_DSCP),
+	PS("nopmtudisc", NOPMTUDISC),
 #undef PS
 
 
@@ -1583,6 +1593,8 @@ int main(int argc, char **argv)
 		case CDP_SINGLETON + POLICY_ESN_YES_IX:
 		/* --decap-dscp */
 		case CDP_SINGLETON + POLICY_DECAP_DSCP_IX:
+		/* --nopmtudisc */
+		case CDP_SINGLETON + POLICY_NOPMTUDISC_IX:
 
 			msg.policy |= LELEM(c - CDP_SINGLETON);
 			continue;
@@ -1784,6 +1796,16 @@ int main(int argc, char **argv)
 			 * and we don't have to consider defaulting
 			 * tunnel_addr_family.
 			 */
+			continue;
+
+		case CD_RSA_SHA2_256:
+			msg.sighash_policy = POL_SIGHASH_SHA2_256;
+			continue;
+		case CD_RSA_SHA2_384:
+			msg.sighash_policy = POL_SIGHASH_SHA2_384;
+			continue;
+		case CD_RSA_SHA2_512:
+			msg.sighash_policy = POL_SIGHASH_SHA2_512;
 			continue;
 
 		case CD_CONNIPV6:
