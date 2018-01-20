@@ -444,7 +444,7 @@ static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct RSA_public_key *k = &kr->u.rsa;
 	(void) version; /* Unused. For ikev2 only */
-	(void) rsa_hash_algo; /* Unused. For ikev2 only */  
+	(void) rsa_hash_algo; /* Unused. For ikev2 only*/
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
 	if (sig_len != k->k) {

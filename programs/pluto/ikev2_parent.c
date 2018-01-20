@@ -100,7 +100,7 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 static int build_ikev2_version(void);
 
-static bool ikev2_out_hash_v2n(u_int8_t np, struct msg_digest *md, lset_t sighash_policy)
+static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t sighash_policy)
 {
 	u_int16_t hash_algo_to_send;
 	chunk_t hash;
@@ -1001,7 +1001,7 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
 	if (!DBGP(IMPAIR_OMIT_HASH_NOTIFY_REQUEST)) {
 		if ((c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
-			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, md, c->sighash_policy))
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
 	} else {
@@ -1617,7 +1617,7 @@ static stf_status ikev2_parent_inI1outR1_tail(struct state *st, struct msg_diges
 	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
 	if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
 		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
-			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, md, c->sighash_policy))
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
 	} else {

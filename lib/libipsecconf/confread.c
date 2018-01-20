@@ -1347,35 +1347,33 @@ static bool load_conn(
 	 * authby=secret|rsasig|null|never|rsa-HASH
 	 */
 	if (conn->strings_set[KSCF_AUTHBY]) {
-		char *val =  conn->strings[KSCF_AUTHBY];
+		char *val = conn->strings[KSCF_AUTHBY];
 
 		/* Supported for IKEv1 and IKEv2 */
 		if (streq(val, "secret"))
 			conn->policy |= POLICY_PSK;
 		else if (streq(val, "rsasig") || streq(val, "rsa")) {
 			conn->policy |= POLICY_RSASIG;
-				starter_log(LOG_LEVEL_INFO,
-					    "case rsasig");
 		}
 		else if (streq(val, "never"))
 			conn->policy |= POLICY_AUTH_NEVER;
-		/* everything els is only supported for IKEv2 */
-/*		if (conn->policy & POLICY_IKEV1_ALLOW) {
+		/* everything else is only supported for IKEv2 */
+		else if (conn->policy & POLICY_IKEV1_ALLOW) {
 			*perr = "connection allowing ikev1 must use authby= of rsasig,secret or never ";
 			return TRUE;
-		}*/
-		if (streq(val, "null")) {
+		}
+		else if (streq(val, "null")) {
 			conn->policy |= POLICY_AUTH_NULL;
 		}
 		else if (streq(val, "rsa-sha2") || streq(val, "rsa-sha2_256")) {
 			conn->policy |= POLICY_RSASIG;
 			conn->sighash_policy |= POL_SIGHASH_SHA2_256;
-				starter_log(LOG_LEVEL_INFO,
-					    "Set sighash sha2-256");
-		} else if (streq(val, "rsa-sha2_384")) {
+		}
+		else if (streq(val, "rsa-sha2_384")) {
 			conn->policy |= POLICY_RSASIG;
 			conn->sighash_policy |= POL_SIGHASH_SHA2_384;
-		} else if (streq(val, "rsa-sha2_512")) {
+		}
+		else if (streq(val, "rsa-sha2_512")) {
 			conn->policy |= POLICY_RSASIG;
 			conn->sighash_policy |= POL_SIGHASH_SHA2_384;
 		} else {

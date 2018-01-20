@@ -283,7 +283,6 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	}
 
 	publicKey->arena = arena;
-	//publicKey->keyType = (rsa_hash_algo == IKEv2_AUTH_HASH_SHA1) ? rsaKey : rsaPssKey;
 	publicKey->keyType = rsaKey;
 	publicKey->pkcs11Slot = NULL;
 	publicKey->pkcs11ID = CK_INVALID_HANDLE;
