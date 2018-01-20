@@ -97,8 +97,6 @@
 static stf_status aggr_inI1_outR1_tail(struct msg_digest *md,
 				       struct pluto_crypto_req *r);
 
-static crypto_req_cont_func aggr_inR1_outI2_crypto_continue;
-
 /*
  * continuation from second calculation (the DH one)
  */
@@ -129,6 +127,7 @@ static crypto_req_cont_func aggr_inI1_outR1_continue1;	/* type assertion */
 static void aggr_inI1_outR1_continue1(struct state *st, struct msg_digest *md,
 				      struct pluto_crypto_req *r)
 {
+	struct msg_digest **mdp = &md; /* XXX: replace MD param with MDP */
 	DBG(DBG_CONTROLMORE,
 	    DBG_log("aggr inI1_outR1: calculated ke+nonce, calculating DH"));
 
@@ -141,12 +140,14 @@ static void aggr_inI1_outR1_continue1(struct state *st, struct msg_digest *md,
 	/* NOTE: the "r" reply will get freed by our caller */
 
 	/* set up second calculation */
-	struct pluto_crypto_req_cont *dh = new_pcrc(aggr_inI1_outR1_continue2,
-						    "aggr outR1 DH",
-						    st, md);
-
-	start_dh_secretiv(dh, st, ORIGINAL_RESPONDER,
-			  st->st_oakley.ta_dh);
+	start_dh_v1_secretiv(aggr_inI1_outR1_continue2, "aggr outR1 DH",
+			     st, ORIGINAL_RESPONDER, st->st_oakley.ta_dh);
+	/*
+	 * XXX: Since more crypto has been requsted, MD needs to be re
+	 * suspended.  If the original crypto request did everything
+	 * this wouldn't be needed.
+	 */
+	suspend_md(st, mdp);
 }
 
 /* STATE_AGGR_R0:
@@ -300,7 +301,7 @@ stf_status aggr_inI1_outR1(struct state *st, struct msg_digest *md)
 	RETURN_STF_FAILURE(accept_v1_nonce(md, &st->st_ni, "Ni"));
 
 	/* calculate KE and Nonce */
-	request_ke_and_nonce("outI2 KE", st, md,
+	request_ke_and_nonce("outI2 KE", st,
 			     st->st_oakley.ta_dh,
 			     aggr_inI1_outR1_continue1);
 	return STF_SUSPEND;
@@ -516,7 +517,7 @@ static stf_status aggr_inI1_outR1_tail(struct msg_digest *md,
 			/* SIG_R out */
 			u_char sig_val[RSA_MAX_OCTETS];
 			size_t sig_len = RSA_sign_hash(c, sig_val, hash_val,
-						       hash_len);
+						       hash_len, 0 /* for ikev2 only */);
 
 			if (sig_len == 0) {
 				loglog(RC_LOG_SERIOUS,
@@ -576,7 +577,7 @@ static stf_status aggr_inI1_outR1_tail(struct msg_digest *md,
  * SMF_DS_AUTH:  HDR, SA, KE, Nr, IDir, [CERT,] SIG_R
  *           --> HDR*, [CERT,] SIG_I
  */
-static stf_status aggr_inR1_outI2_tail(struct msg_digest *md); /* forward */
+static crypto_req_cont_func aggr_inR1_outI2_crypto_continue;	/* forward decl and type asssertion */
 
 stf_status aggr_inR1_outI2(struct state *st, struct msg_digest *md)
 {
@@ -634,16 +635,12 @@ stf_status aggr_inR1_outI2(struct state *st, struct msg_digest *md)
 	ikev1_natd_init(st, md);
 
 	/* set up second calculation */
-	struct pluto_crypto_req_cont *dh = new_pcrc(aggr_inR1_outI2_crypto_continue,
-						    "aggr outR1 DH",
-						    st, md);
-
-	start_dh_secretiv(dh, st, ORIGINAL_INITIATOR,
-			  st->st_oakley.ta_dh);
+	start_dh_v1_secretiv(aggr_inR1_outI2_crypto_continue, "aggr outR1 DH",
+			     st, ORIGINAL_INITIATOR, st->st_oakley.ta_dh);
 	return STF_SUSPEND;
 }
 
-/* redundant type assertion: static crypto_req_cont_func aggr_inR1_outI2_crypto_continue; */
+static stf_status aggr_inR1_outI2_tail(struct msg_digest *md); /* forward */
 
 static void aggr_inR1_outI2_crypto_continue(struct state *st, struct msg_digest *md,
 					    struct pluto_crypto_req *r)
@@ -654,6 +651,7 @@ static void aggr_inR1_outI2_crypto_continue(struct state *st, struct msg_digest 
 	    DBG_log("aggr inR1_outI2: calculated DH, sending I2"));
 
 	passert(st != NULL);
+	passert(md != NULL);
 
 	if (!finish_dh_secretiv(st, r)) {
 		e = STF_FAIL + INVALID_KEY_INFORMATION;
@@ -661,10 +659,11 @@ static void aggr_inR1_outI2_crypto_continue(struct state *st, struct msg_digest 
 		e = aggr_inR1_outI2_tail(md);
 	}
 
-	passert(md != NULL);
 	complete_v1_state_transition(&md, e);
 	release_any_md(&md);
 }
+
+/* Note: this is only called once.  Not really a tail. */
 
 static stf_status aggr_inR1_outI2_tail(struct msg_digest *md)
 {
@@ -822,7 +821,7 @@ static stf_status aggr_inR1_outI2_tail(struct msg_digest *md)
 			u_char sig_val[RSA_MAX_OCTETS];
 			size_t sig_len = RSA_sign_hash(st->st_connection,
 						       sig_val, hash_val,
-						       hash_len);
+						       hash_len, 0 /* for ikev2 only */);
 
 			if (sig_len == 0) {
 				loglog(RC_LOG_SERIOUS,
@@ -1104,7 +1103,7 @@ void aggr_outI1(int whack_sock,
 	/*
 	 * Calculate KE and Nonce.
 	 */
-	request_ke_and_nonce("aggr_outI1 KE + nonce", st, NULL,
+	request_ke_and_nonce("aggr_outI1 KE + nonce", st,
 			     st->st_oakley.ta_dh,
 			     aggr_outI1_continue);
 	reset_globals();

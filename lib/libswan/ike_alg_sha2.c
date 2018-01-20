@@ -4,6 +4,7 @@
  * Copyright (C) 2013 Florian Weimer <fweimer@redhat.com>
  * Copyright (C) 2013 D. Hugh Redelmeier <hugh@mimosa.com>
  * Copyright (C) 2016 Andrew Cagney <cagney@gnu.org>
+ * Copyright (C) 2016 Sahana Prasad  <sahana.prasad07@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,6 +22,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <libreswan.h>
+#include <pkcs11t.h>
 
 #include "constants.h"
 #include "lswlog.h"
@@ -114,6 +116,12 @@ const struct integ_desc ike_alg_integ_hmac_sha2_256_truncbug = {
 	.integ_ikev1_ah_transform = AUTH_ALGORITHM_HMAC_SHA2_256_TRUNCBUG, /* YES, not AH_... */
 };
 
+const CK_RSA_PKCS_PSS_PARAMS rsa_pss_sha2_256 = {
+	.hashAlg = CKM_SHA256,
+	.mgf = CKG_MGF1_SHA256,
+	.sLen = SHA2_256_DIGEST_SIZE,
+};
+
 const struct hash_desc ike_alg_hash_sha2_384 = {
 	.common = {
 		.name = "sha2_384",
@@ -180,6 +188,12 @@ const struct integ_desc ike_alg_integ_sha2_384 = {
 	.prf = &ike_alg_prf_sha2_384,
 };
 
+const CK_RSA_PKCS_PSS_PARAMS rsa_pss_sha2_384 = {
+	.hashAlg = CKM_SHA384,
+	.mgf = CKG_MGF1_SHA384,
+	.sLen = SHA2_384_DIGEST_SIZE,
+};
+
 const struct hash_desc ike_alg_hash_sha2_512 = {
 	.common = {
 		.name = "sha2_512",
@@ -244,4 +258,10 @@ const struct integ_desc ike_alg_integ_sha2_512 = {
 	.integ_output_size = SHA2_512_DIGEST_SIZE / 2,
 	.integ_ikev1_ah_transform = AH_SHA2_512,
 	.prf = &ike_alg_prf_sha2_512,
+};
+
+const CK_RSA_PKCS_PSS_PARAMS rsa_pss_sha2_512 = {
+	.hashAlg = CKM_SHA512,
+	.mgf = CKG_MGF1_SHA512,
+	.sLen = SHA2_512_DIGEST_SIZE,
 };

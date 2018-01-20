@@ -110,16 +110,16 @@ extern bool should_fragment_ike_msg(struct state *st, size_t len,
 				    bool resending);
 
 struct packet_byte_stream;	/* forward decl of tag */
-extern void record_outbound_ike_msg(struct state *st, struct packet_byte_stream *pbs, const char *what);
 extern bool send_ike_msg(struct state *st, const char *where);
 extern bool record_and_send_ike_msg(struct state *st, struct packet_byte_stream *pbs, const char *what);
-extern bool send_ike_msg_without_recording(struct state *st, struct packet_byte_stream *pbs, const char *where);
 extern bool resend_ike_v1_msg(struct state *st, const char *where);
-extern bool send_keepalive(struct state *st, const char *where);
 extern struct event_base *get_pluto_event_base(void);
 
 extern int pluto_fork(int op(void *context),
 		      void (*callback)(int status, void *context),
 		      void *context);
+
+bool check_incoming_msg_errqueue(const struct iface_port *ifp, const char *before);
+void check_outgoing_msg_errqueue(const struct iface_port *ifp, const char *before);
 
 #endif /* _SERVER_H */

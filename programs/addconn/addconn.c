@@ -108,15 +108,18 @@ void init_seccomp_addconn(uint32_t def_action)
 	rc |= S_RULE_ADD(epoll_create);
 	rc |= S_RULE_ADD(epoll_ctl);
 	rc |= S_RULE_ADD(epoll_wait);
+	rc |= S_RULE_ADD(epoll_pwait);
 	rc |= S_RULE_ADD(exit_group);
 	rc |= S_RULE_ADD(fcntl);
 	rc |= S_RULE_ADD(fstat);
 	rc |= S_RULE_ADD(futex);
 	rc |= S_RULE_ADD(getdents);
 	rc |= S_RULE_ADD(getegid);
+	rc |= S_RULE_ADD(getpid);
 	rc |= S_RULE_ADD(getrlimit);
 	rc |= S_RULE_ADD(geteuid);
 	rc |= S_RULE_ADD(getgid);
+	rc |= S_RULE_ADD(getrandom);
 	rc |= S_RULE_ADD(getuid);
 	rc |= S_RULE_ADD(ioctl);
 	rc |= S_RULE_ADD(mmap);
@@ -124,6 +127,7 @@ void init_seccomp_addconn(uint32_t def_action)
 	rc |= S_RULE_ADD(munmap);
 	rc |= S_RULE_ADD(mprotect);
 	rc |= S_RULE_ADD(open);
+	rc |= S_RULE_ADD(openat);
 	rc |= S_RULE_ADD(poll);
 	rc |= S_RULE_ADD(prctl);
 	rc |= S_RULE_ADD(read);
@@ -136,7 +140,9 @@ void init_seccomp_addconn(uint32_t def_action)
 	rc |= S_RULE_ADD(set_robust_list);
 	rc |= S_RULE_ADD(set_tid_address);
 	rc |= S_RULE_ADD(socket);
+	rc |= S_RULE_ADD(socketcall);
 	rc |= S_RULE_ADD(socketpair);
+	rc |= S_RULE_ADD(stat);
 	rc |= S_RULE_ADD(statfs);
 	rc |= S_RULE_ADD(uname);
 	rc |= S_RULE_ADD(write);

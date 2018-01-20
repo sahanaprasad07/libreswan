@@ -75,6 +75,7 @@
 #include "virtual.h"	/* needs connections.h */
 #include "addresspool.h"
 #include "ip_address.h"
+#include "send.h"
 
 /* forward declarations */
 static stf_status xauth_client_ackstatus(struct state *st,
@@ -1416,8 +1417,7 @@ stf_status xauth_inR0(struct state *st, struct msg_digest *md)
 		}
 	} else {
 		xauth_launch_authent(st, &name, &password);
-		set_suspended(st, md);
-		return STF_IGNORE;
+		return STF_SUSPEND;
 	}
 }
 

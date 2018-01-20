@@ -1357,6 +1357,10 @@ void add_connection(const struct whack_message *wm)
 			return;
 		}
 	}
+	if (wm->sighash_policy != POL_SIGHASH_NONE && (wm->policy & POLICY_IKEV1_ALLOW)) {
+		loglog(RC_FATAL, "MOBIKE requires ikev2=insist");
+		return;
+	}
 
 	if (wm->policy & POLICY_MOBIKE) {
 		if (!migrate_xfrm_sa_check()) {
@@ -1485,6 +1489,10 @@ void add_connection(const struct whack_message *wm)
 		c->connalias = wm->connalias;
 		c->dnshostname = wm->dnshostname;
 		c->policy = wm->policy;
+		c->sighash_policy = wm->sighash_policy;
+		loglog(RC_FATAL,
+			"sighash in connections is  %ld",
+				c->sighash_policy);
 
 #ifdef FIPS_CHECK
 		if (libreswan_fipsmode()) {

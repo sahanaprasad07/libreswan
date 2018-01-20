@@ -13,6 +13,8 @@
  * for more details.
  */
 
+#include "chunk.h"
+
 chunk_t decode_hex_to_chunk(const char *original, const char *string);
 chunk_t decode_to_chunk(const char *prefix, const char *string);
 bool verify_chunk(const char *desc,

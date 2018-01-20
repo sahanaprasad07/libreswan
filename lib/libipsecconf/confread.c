@@ -1107,29 +1107,15 @@ static bool load_conn(
 	if (conn->options_set[KBF_TYPE]) {
 		switch ((enum keyword_satype)conn->options[KBF_TYPE]) {
 		case KS_TUNNEL:
-			if (conn->options_set[KBF_AUTHBY] &&
-				conn->options[KBF_AUTHBY] == POLICY_AUTH_NEVER) {
-					*perr = "connection type=tunnel must not specify authby=never";
-					return TRUE;
-			}
 			conn->policy |= POLICY_TUNNEL;
 			conn->policy &= ~POLICY_SHUNT_MASK;
 			break;
 
 		case KS_TRANSPORT:
-			if (conn->options_set[KBF_AUTHBY] &&
-				conn->options[KBF_AUTHBY] == POLICY_AUTH_NEVER) {
-					*perr = "connection type=transport must not specify authby=never";
-					return TRUE;
-			}
 			conn->policy &= ~POLICY_TUNNEL & ~POLICY_SHUNT_MASK;
 			break;
 
 		case KS_PASSTHROUGH:
-			if (!conn->options_set[KBF_AUTHBY] ||
-				conn->options[KBF_AUTHBY] != POLICY_AUTH_NEVER) {
-					*perr = "connection type=passthrough must specify authby=never";
-			}
 			conn->policy &=
 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
 				  POLICY_TUNNEL | POLICY_RSASIG) &
@@ -1138,10 +1124,6 @@ static bool load_conn(
 			break;
 
 		case KS_DROP:
-			if (!conn->options_set[KBF_AUTHBY] ||
-				conn->options[KBF_AUTHBY] != POLICY_AUTH_NEVER) {
-					*perr = "connection type=drop must specify authby=never";
-			}
 			conn->policy &=
 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
 				  POLICY_TUNNEL | POLICY_RSASIG) &
@@ -1150,10 +1132,6 @@ static bool load_conn(
 			break;
 
 		case KS_REJECT:
-			if (!conn->options_set[KBF_AUTHBY] ||
-				conn->options[KBF_AUTHBY] != POLICY_AUTH_NEVER) {
-					*perr = "connection type=drop must specify authby=never";
-			}
 			conn->policy &=
 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
 				  POLICY_TUNNEL | POLICY_RSASIG) &
@@ -1196,10 +1174,10 @@ static bool load_conn(
 	KW_POLICY_FLAG(KBF_PFS, POLICY_PFS);
 
 	/* reset authby= flags */
-	if (conn->options_set[KBF_AUTHBY]) {
+	if (conn->options_set[KSCF_AUTHBY]) {
 
 		conn->policy &= ~POLICY_ID_AUTH_MASK;
-		conn->policy |= conn->options[KBF_AUTHBY];
+		conn->sighash_policy = POL_SIGHASH_NONE;
 
 	}
 
@@ -1359,6 +1337,49 @@ static bool load_conn(
 
 		case sat_no:
 			break;
+		}
+	}
+
+	/* read in the authby string and translate to policy bits and polsighash bits
+	 * this is the symmetric (left+right) version
+	 * there is also leftauthby/rightauthby version stored in 'end'
+	 *
+	 * authby=secret|rsasig|null|never|rsa-HASH
+	 */
+	if (conn->strings_set[KSCF_AUTHBY]) {
+		char *val = conn->strings[KSCF_AUTHBY];
+
+		/* Supported for IKEv1 and IKEv2 */
+		if (streq(val, "secret"))
+			conn->policy |= POLICY_PSK;
+		else if (streq(val, "rsasig") || streq(val, "rsa")) {
+			conn->policy |= POLICY_RSASIG;
+			conn->sighash_policy |= POL_SIGHASH_NONE;
+		}
+		else if (streq(val, "never"))
+			conn->policy |= POLICY_AUTH_NEVER;
+		/* everything else is only supported for IKEv2 */
+		else if (conn->policy & POLICY_IKEV1_ALLOW) {
+			*perr = "connection allowing ikev1 must use authby= of rsasig,secret or never ";
+			return TRUE;
+		}
+		else if (streq(val, "null")) {
+			conn->policy |= POLICY_AUTH_NULL;
+		}
+		else if (streq(val, "rsa-sha2") || streq(val, "rsa-sha2_256")) {
+			conn->policy |= POLICY_RSASIG;
+			conn->sighash_policy |= POL_SIGHASH_SHA2_256;
+		}
+		else if (streq(val, "rsa-sha2_384")) {
+			conn->policy |= POLICY_RSASIG;
+			conn->sighash_policy |= POL_SIGHASH_SHA2_384;
+		}
+		else if (streq(val, "rsa-sha2_512")) {
+			conn->policy |= POLICY_RSASIG;
+			conn->sighash_policy |= POL_SIGHASH_SHA2_384;
+		} else {
+			*perr = "connection authby= value is unknown";
+			return TRUE;
 		}
 	}
 

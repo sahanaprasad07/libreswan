@@ -130,18 +130,6 @@ static const struct keyword_enum_value kw_seccomp_values[] = {
 static const struct keyword_enum_values kw_seccomp_list = VALUES_INITIALIZER(kw_seccomp_values);
 #endif
 
-/*
- * Values for authby={never, rsasig, secret, null}
- */
-static const struct keyword_enum_value kw_authby_values[] = {
-        { "secret",    POLICY_PSK },
-        { "rsasig",    POLICY_RSASIG },
-        { "never",     POLICY_AUTH_NEVER },
-        { "null",      POLICY_AUTH_NULL },
-        { "secret|rsasig",    POLICY_PSK | POLICY_RSASIG},
-};
-static const struct keyword_enum_values kw_authby_list = VALUES_INITIALIZER(kw_authby_values);
-
 static const struct keyword_enum_value kw_auth_lr_values[] = {
        { "never",     AUTH_NEVER },
        { "secret",    AUTH_PSK },
@@ -525,7 +513,7 @@ const struct keyword_def ipsec_conf_keywords[] = {
   { "alsoflip",  kv_conn,  kt_string,  KSCF_ALSOFLIP, NULL, NULL, },
   { "connaddrfamily",  kv_conn,  kt_enum,  KBF_CONNADDRFAMILY,  &kw_connaddrfamily_list, NULL, },
   { "type",  kv_conn,  kt_enum,  KBF_TYPE,  &kw_type_list, NULL, },
-  { "authby",  kv_conn,  kt_enum,  KBF_AUTHBY,  &kw_authby_list, NULL, },
+  { "authby",  kv_conn,  kt_string,  KSCF_AUTHBY, NULL, NULL, },
   { "keyexchange",  kv_conn,  kt_enum,  KBF_KEYEXCHANGE,  &kw_keyexchange_list, NULL, },
   { "ikev2",  kv_conn | kv_processed,  kt_enum,  KBF_IKEv2,  &kw_fourvalued_list, NULL, },
   { "ppk", kv_conn | kv_processed, kt_enum, KBF_PPK, &kw_fourvalued_list, NULL, },
@@ -584,8 +572,8 @@ const struct keyword_def ipsec_conf_keywords[] = {
   { "xauthfail",  kv_conn,  kt_enum,  KBF_XAUTHFAIL,  &kw_xauthfail, NULL, },
   { "modecfgpull",  kv_conn,  kt_invertbool,  KBF_MODECONFIGPULL, NULL, NULL, },
   { "modecfgdns",  kv_conn,  kt_string,  KSCF_MODECFGDNS, NULL, NULL, },
-  { "modecfgdns1",  kv_conn,  kt_string | kv_alias, KSCF_MODECFGDNS, NULL, NULL, }, /* obsolete */
-  { "modecfgdns2",  kv_conn,  kt_string | kv_alias, KSCF_MODECFGDNS, NULL, NULL, }, /* obsolete */
+  { "modecfgdns1",  kv_conn | kv_alias, kt_string, KSCF_MODECFGDNS, NULL, NULL, }, /* obsolete */
+  { "modecfgdns2",  kv_conn, kt_obsolete, KBF_WARNIGNORE, NULL, NULL, }, /* obsolete */
   { "modecfgdomains",  kv_conn,  kt_string,  KSCF_MODECFGDOMAINS, NULL, NULL, },
   { "modecfgdomain",  kv_conn | kv_alias,  kt_string,  KSCF_MODECFGDOMAINS, NULL, NULL, }, /* obsolete */
   { "modecfgbanner",  kv_conn,  kt_string,  KSCF_MODECFGBANNER, NULL, NULL, },

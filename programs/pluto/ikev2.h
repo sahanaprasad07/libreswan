@@ -159,10 +159,13 @@ extern bool ikev2_decode_peer_id_and_certs(struct msg_digest *md);
 
 extern void ikev2_log_parentSA(struct state *st);
 
-extern bool ikev2_calculate_rsa_sha1(struct state *st,
+extern bool ikev2_calculate_rsa_hash(struct state *st,
 				     enum original_role role,
 				     unsigned char *idhash,
-				     pb_stream *a_pbs);
+				     pb_stream *a_pbs,
+				     bool calc_no_ppk_auth,
+				     chunk_t *no_ppk_auth,
+				     enum notify_payload_hash_algorithms rsa_hash_algo);
 
 extern bool ikev2_create_psk_auth(enum keyword_authby authby,
 				     struct state *st,
@@ -171,10 +174,11 @@ extern bool ikev2_create_psk_auth(enum keyword_authby authby,
 				     bool calc_no_ppk_auth,
 				     chunk_t *no_ppk_auth);
 
-extern stf_status ikev2_verify_rsa_sha1(struct state *st,
+extern stf_status ikev2_verify_rsa_hash(struct state *st,
 					enum original_role role,
 					unsigned char *idhash,
-					pb_stream *sig_pbs);
+					pb_stream *sig_pbs,
+					enum notify_payload_hash_algorithms rsa_hash_algo);
 
 extern stf_status ikev2_verify_psk_auth(enum keyword_authby authby,
 					struct state *st,

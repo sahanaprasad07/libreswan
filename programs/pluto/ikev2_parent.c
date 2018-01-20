@@ -77,7 +77,7 @@
 #include "ietf_constants.h"
 #include "ip_address.h"
 #include "hostpair.h"
-
+#include "send.h"
 #include "pluto_stats.h"
 
 #include "ipsecconf/confread.h"
@@ -100,19 +100,23 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 static int build_ikev2_version(void);
 
-static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t policy)
+static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t sighash_policy)
 {
 	u_int16_t hash_algo_to_send;
 	chunk_t hash;
-
-	switch (policy) {
-	case POLICY_RSASIG:
-		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA1);
+	if (sighash_policy & POL_SIGHASH_SHA2_256) {
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_256);
 		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
-		break;
-	default:
-		bad_case(policy);
 	}
+	else if (sighash_policy & POL_SIGHASH_SHA2_384) {
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_384);
+		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
+	}
+	else if (sighash_policy & POL_SIGHASH_SHA2_512) {
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_512);
+		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
+	} else
+		return FALSE;
 
 	if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
 		      PROTO_v2_RESERVED, &empty_chunk,
@@ -241,12 +245,11 @@ static stf_status add_st_send_list(struct state *st, struct state *pst)
 }
 
 
-static crypto_req_cont_func ikev2_crypto_continue;
+static crypto_req_cont_func ikev2_crypto_continue;	/* forward decl and type assertion */
 
 static stf_status ikev2_rekey_dh_start(struct pluto_crypto_req *r,
 				       struct msg_digest *md)
 {
-
 	struct state *const st = md->st;
 	struct state *pst = state_with_serialno(st->st_clonedfrom);
 
@@ -264,7 +267,7 @@ static stf_status ikev2_rekey_dh_start(struct pluto_crypto_req *r,
 			return STF_FAIL;
 		}
 		/* initiate calculation of g^xy */
-		start_dh_v2(st, md, "DHv2 for child sa", role,
+		start_dh_v2(st, "DHv2 for child sa", role,
 			    pst->st_skey_d_nss, /* only IKE has SK_d */
 			    pst->st_oakley.ta_prf, /* for IKE/ESP/AH */
 			    ikev2_crypto_continue);
@@ -298,7 +301,6 @@ static struct msg_digest *fake_md(struct state *st)
 	return fake_md;
 }
 
-/* redundant type assertion: static crypto_req_cont_func ikev2_crypto_continue; */
 static void ikev2_crypto_continue(struct state *st, struct msg_digest *md,
 				  struct pluto_crypto_req *r)
 {
@@ -337,8 +339,6 @@ static void ikev2_crypto_continue(struct state *st, struct msg_digest *md,
 			unpack_KE_from_helper(st, r, &st->st_gi);
 
 		e = add_st_send_list(st, pst);
-		if (e == STF_SUSPEND)
-			set_suspended(st, md);
 		break;
 
 	case STATE_V2_REKEY_IKE_I0:
@@ -442,13 +442,13 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 		st->st_msgid_lastrecv = v2_INVALID_MSGID;
 		st->st_msgid_nextuse = 0;
 		st->st_msgid = 0;
-		request_ke_and_nonce(what, st, md,
+		request_ke_and_nonce(what, st,
 				     st->st_oakley.ta_dh,
 				     ikev2_crypto_continue);
 		return STF_SUSPEND;
 
 	case STATE_V2_REKEY_IKE_R:
-		request_ke_and_nonce(what, st, md,
+		request_ke_and_nonce(what, st,
 				     st->st_oakley.ta_dh,
 				     ikev2_crypto_continue);
 		return STF_SUSPEND;
@@ -456,11 +456,11 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 	case STATE_V2_CREATE_R:
 	case STATE_V2_REKEY_CHILD_R:
 		if (md->chain[ISAKMP_NEXT_v2KE] != NULL) {
-			request_ke_and_nonce(what, st, md,
+			request_ke_and_nonce(what, st,
 					     st->st_oakley.ta_dh,
 					     ikev2_crypto_continue);
 		} else {
-			request_nonce(what, st, md,
+			request_nonce(what, st,
 				      ikev2_crypto_continue);
 		}
 		return STF_SUSPEND;
@@ -468,17 +468,17 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 	case STATE_V2_REKEY_CHILD_I0:
 	case STATE_V2_CREATE_I0:
 		if (st->st_pfs_group == NULL) {
-			request_nonce(what, st, md,
+			request_nonce(what, st,
 				      ikev2_crypto_continue);
 		} else {
-			request_ke_and_nonce(what, st, md,
+			request_ke_and_nonce(what, st,
 					     st->st_pfs_group,
 					     ikev2_crypto_continue);
 		}
 		return STF_SUSPEND;
 
 	case STATE_V2_CREATE_I:
-		start_dh_v2(st, md, "ikev2 Child SA initiator pfs=yes",
+		start_dh_v2(st, "ikev2 Child SA initiator pfs=yes",
 			    ORIGINAL_INITIATOR, NULL, st->st_oakley.ta_prf,
 			    ikev2_crypto_continue);
 		return STF_SUSPEND;
@@ -525,8 +525,8 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	pb_stream *pbs,
 	const enum keyword_authby that_authby)
 {
-	unsigned char check_rsa_sha1_blob[ASN1_SHA1_RSA_OID_SIZE] = {0x0};
-	unsigned char check_length_rsa_sha1_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
+	unsigned char check_rsa_pss_sha256_blob[ASN1_SHA2_256_RSA_PSS_OID_SIZE] = {0x0};
+	unsigned char check_length_rsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -536,11 +536,12 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 			return FALSE;
 		}
 
-		stf_status authstat = ikev2_verify_rsa_sha1(
+		stf_status authstat = ikev2_verify_rsa_hash(
 				st,
 				role,
 				idhash_in,
-				pbs);
+				pbs,
+				IKEv2_AUTH_HASH_SHA1);
 
 		if (authstat != STF_OK) {
 			libreswan_log("RSA authentication failed");
@@ -594,23 +595,24 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-		if (!in_raw(check_length_rsa_sha1_blob, ASN1_LEN_ALGO_IDENTIFIER, pbs,
+		if (!in_raw(check_length_rsa_sha2_blob, ASN1_LEN_ALGO_IDENTIFIER, pbs,
 				"Algorithm Identifier length"))
 			return FALSE;
-		if (!memeq(check_length_rsa_sha1_blob, len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER))
+		if (!memeq(check_length_rsa_sha2_blob, len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER))
 			return FALSE;
 
-		if (!in_raw(check_rsa_sha1_blob, ASN1_SHA1_RSA_OID_SIZE, pbs,
+		if (!in_raw(check_rsa_pss_sha256_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE, pbs,
 				"Algorithm Identifier value"))
 			return FALSE;
-		if (!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, ASN1_SHA1_RSA_OID_SIZE))
+		if (!memeq(check_rsa_pss_sha256_blob, sha256_rsa_pss_oid_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE))
 			return FALSE;
 
-		stf_status authstat = ikev2_verify_rsa_sha1(
+		stf_status authstat = ikev2_verify_rsa_hash(
 				st,
 				role,
 				idhash_in,
-				pbs);
+				pbs,
+				IKEv2_AUTH_HASH_SHA2_256);
 
 		if (authstat != STF_OK) {
 			libreswan_log("Digital Signature authentication failed");
@@ -637,10 +639,13 @@ static bool id_ipseckey_allowed(struct state *st, enum ikev2_auth_method atype)
 
 	if (!c->spd.that.key_from_DNS_on_demand)
 		return FALSE;
+		libreswan_log("authmethod is %u", (c->spd.that.authby));
 
 	if (c->spd.that.authby == AUTH_RSASIG &&
 	    (id.kind == ID_FQDN || id_is_ipaddr(&id)))
 {
+		libreswan_log("came inside id_ipseckey_allowed");
+		libreswan_log("authmethod is %u", (c->spd.that.authby));
 		switch (atype) {
 		case IKEv2_AUTH_RESERVED:
 		case IKEv2_AUTH_DIGSIG:
@@ -981,7 +986,6 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 	/* Send USE_PPK Notify payload */
 	if (LIN(POLICY_PPK_ALLOW, c->policy)) {
-
 		if (!ship_v2N(ISAKMP_NEXT_v2N, ISAKMP_PAYLOAD_NONCRITICAL,
 				PROTO_v2_RESERVED, &empty_chunk,
 				v2N_USE_PPK, &empty_chunk,
@@ -991,8 +995,8 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
 	if (!DBGP(IMPAIR_OMIT_HASH_NOTIFY_REQUEST)) {
-		if (c->policy & POLICY_RSASIG) {
-			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, POLICY_RSASIG))
+		if ((c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
 	} else {
@@ -1046,8 +1050,8 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 
 	/* save packet for later signing */
 	freeanychunk(st->st_firstpacket_me);
-	clonetochunk(st->st_firstpacket_me, reply_stream.start,
-		     pbs_offset(&reply_stream), "saved first packet");
+	st->st_firstpacket_me = chunk_clone(pbs_as_chunk(&reply_stream),
+					    "saved first packet");
 
 	/* Transmit */
 	record_outbound_ike_msg(st, &reply_stream, "reply packet for ikev2_parent_outI1_common");
@@ -1071,8 +1075,8 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
  * HDR, SAr1, KEr, Nr, [CERTREQ] -->
  */
 
-static crypto_req_cont_func ikev2_parent_inI1outR1_continue;	/* type assertion */
-static crypto_transition_fn ikev2_parent_inI1outR1_tail;
+static crypto_req_cont_func ikev2_parent_inI1outR1_continue;	/* forward decl and type assertion */
+static crypto_transition_fn ikev2_parent_inI1outR1_tail;	/* forward decl and type assertion */
 
 stf_status ikev2parent_inI1outR1(struct state *null_st, struct msg_digest *md)
 {
@@ -1432,13 +1436,11 @@ stf_status ikev2parent_inI1outR1(struct state *null_st, struct msg_digest *md)
 	}
 
 	/* calculate the nonce and the KE */
-	request_ke_and_nonce("ikev2_inI1outR1 KE", st, md,
+	request_ke_and_nonce("ikev2_inI1outR1 KE", st,
 			     st->st_oakley.ta_dh,
 			     ikev2_parent_inI1outR1_continue);
 	return STF_SUSPEND;
 }
-
-/* redundant type assertion: static crypto_req_cont_func ikev2_parent_inI1outR1_continue; */
 
 static void ikev2_parent_inI1outR1_continue(struct state *st, struct msg_digest *md,
 					    struct pluto_crypto_req *r)
@@ -1470,9 +1472,8 @@ static stf_status ikev2_parent_inI1outR1_tail(struct state *st, struct msg_diges
 	/* note that we don't update the state here yet */
 
 	/* record first packet for later checking of signature */
-	clonetochunk(st->st_firstpacket_him, md->message_pbs.start,
-		     pbs_offset(&md->message_pbs),
-		     "saved first received packet");
+	st->st_firstpacket_him = chunk_clone(pbs_as_chunk(&md->message_pbs),
+					     "saved first received packet");
 
 	/* make sure HDR is at start of a clean buffer */
 	init_out_pbs(&reply_stream, reply_buffer, sizeof(reply_buffer),
@@ -1607,8 +1608,8 @@ static stf_status ikev2_parent_inI1outR1_tail(struct state *st, struct msg_diges
 
 	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
 	if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
-		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) {
-			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, POLICY_RSASIG))
+		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
 	} else {
@@ -1677,8 +1678,7 @@ static stf_status ikev2_parent_inI1outR1_tail(struct state *st, struct msg_diges
 
 	/* save packet for later signing */
 	freeanychunk(st->st_firstpacket_me);
-	clonetochunk(st->st_firstpacket_me, reply_stream.start,
-		     pbs_offset(&reply_stream), "saved first packet");
+	st->st_firstpacket_me = chunk_clone(pbs_as_chunk(&reply_stream), "saved first packet");
 
 	/* note: retransmission is driven by initiator, not us */
 
@@ -1875,8 +1875,8 @@ stf_status ikev2parent_inR1BoutI1B(struct state *st, struct msg_digest *md)
  *      TSi, TSr}      -->
  */
 
-static crypto_req_cont_func ikev2_parent_inR1outI2_continue;	/* type assertion */
-static crypto_transition_fn ikev2_parent_inR1outI2_tail;
+static crypto_req_cont_func ikev2_parent_inR1outI2_continue;	/* forward decl and type assertion */
+static crypto_transition_fn ikev2_parent_inR1outI2_tail;	/* forward decl and type assertion */
 
 stf_status ikev2parent_inR1outI2(struct state *st, struct msg_digest *md)
 {
@@ -2016,13 +2016,11 @@ stf_status ikev2parent_inR1outI2(struct state *st, struct msg_digest *md)
 	}
 
 	/* initiate calculation of g^xy */
-	start_dh_v2(st, md, "ikev2_inR1outI2 KE",
+	start_dh_v2(st, "ikev2_inR1outI2 KE",
 		    ORIGINAL_INITIATOR, NULL,
 		    NULL, ikev2_parent_inR1outI2_continue);
 	return STF_SUSPEND;
 }
-
-/* redundant type assertion: static crypto_req_cont_func ikev2_parent_inR1outI2_continue; */
 
 static void ikev2_parent_inR1outI2_continue(struct state *st, struct msg_digest *md,
 					    struct pluto_crypto_req *r)
@@ -2151,12 +2149,16 @@ static unsigned char *ikev2_authloc(struct state *st,
 }
 
 static stf_status ikev2_encrypt_msg(struct state *st,
-				    unsigned char *auth_start,
-				    unsigned char *wire_iv_start,
-				    unsigned char *enc_start,
-				    unsigned char *integ_start,
+				    uint8_t *auth_start,
+				    uint8_t *wire_iv_start,
+				    uint8_t *enc_start,
+				    uint8_t *integ_start,
 				    pb_stream *e_pbs_cipher)
 {
+	passert(auth_start <= wire_iv_start);
+	passert(wire_iv_start <= enc_start);
+	passert(enc_start <= integ_start);
+
 	struct state *pst = st;
 
 	/*
@@ -2784,7 +2786,10 @@ static stf_status ikev2_send_auth(struct connection *c,
 
 	switch (a.isaa_type) {
 	case IKEv2_AUTH_RSA:
-		if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
+		if (!ikev2_calculate_rsa_hash(pst, role, idhash_out, &a_pbs,
+			FALSE, /* store-only not set */
+			NULL /* store-only chunk unused */,
+			IKEv2_AUTH_HASH_SHA1)) {
 			loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 			return STF_FATAL;
 		}
@@ -2793,27 +2798,30 @@ static stf_status ikev2_send_auth(struct connection *c,
 	case IKEv2_AUTH_PSK:
 	case IKEv2_AUTH_NULL:
 		if (!ikev2_create_psk_auth(authby, pst, idhash_out, &a_pbs,
-			FALSE /* store-only not set */,
+			FALSE, /* store-only not set */
 			NULL /* store-only chunk unused */)) {
 			loglog(RC_LOG_SERIOUS, "Failed to find our PreShared Key");
 			return STF_FATAL;
 		}
 		break;
 	case IKEv2_AUTH_DIGSIG:
-		if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA1) {
-			if (!out_raw(len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
-				"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption")) {
-					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-SHA1 OID length");
+		if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA2_256) {
+			if (!out_raw(len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
+				"Length of the ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
+					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID length");
 					return STF_INTERNAL_ERROR;
 			}
 
-			if (!out_raw(sha1_rsa_oid_blob, ASN1_SHA1_RSA_OID_SIZE, &a_pbs,
-				"OID of ASN.1 Algorithm Identifier sha1WithRSAEncryption")) {
-					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-SHA1 OID");
+			if (!out_raw(sha256_rsa_pss_oid_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE, &a_pbs,
+				"OID of ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
+					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID");
 					return STF_INTERNAL_ERROR;
 			}
 
-			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs)) {
+			if (!ikev2_calculate_rsa_hash(pst, role, idhash_out, &a_pbs,
+				FALSE, /* store-only not set */
+				NULL /* store-only chunk unused */,
+				IKEv2_AUTH_HASH_SHA2_256)) {
 				loglog(RC_LOG_SERIOUS, "DigSig: failed to find our RSA key");
 				return STF_FATAL;
 			}
@@ -2849,19 +2857,13 @@ static stf_status ikev2_record_fragment(struct msg_digest *md,
 	struct state *st = IS_CHILD_SA(md->st) ?
 		state_with_serialno(md->st->st_clonedfrom) : md->st;
 	struct ikev2_skf e;
-	unsigned char *encstart;
 	pb_stream e_pbs, e_pbs_cipher;
-	unsigned char *iv;
-	unsigned char *authstart;
 	pb_stream frag_stream;
 	unsigned char frag_buffer[PMAX(MIN_MAX_UDP_DATA_v4, MIN_MAX_UDP_DATA_v6)];
 
 	/* make sure HDR is at start of a clean buffer */
 	init_out_pbs(&frag_stream, frag_buffer, sizeof(frag_buffer),
 		 "reply frag packet");
-
-	/* beginning of data going out */
-	authstart = frag_stream.cur;
 
 	/* HDR out */
 	pb_stream rbody;
@@ -2883,9 +2885,10 @@ static stf_status ikev2_record_fragment(struct msg_digest *md,
 		return STF_INTERNAL_ERROR;
 
 	/* insert IV */
-	iv = e_pbs.cur;
+	uint8_t *iv = e_pbs.cur;
 	if (!emit_wire_iv(st, &e_pbs))
 		return STF_INTERNAL_ERROR;
+	passert(frag_stream.start <= iv);
 
 	/* note where cleartext starts */
 	init_pbs(&e_pbs_cipher, e_pbs.cur, e_pbs.roof - e_pbs.cur,
@@ -2893,7 +2896,8 @@ static stf_status ikev2_record_fragment(struct msg_digest *md,
 	e_pbs_cipher.container = &e_pbs;
 	e_pbs_cipher.desc = NULL;
 	e_pbs_cipher.cur = e_pbs.cur;
-	encstart = e_pbs_cipher.cur;
+	uint8_t *encstart = e_pbs_cipher.cur;
+	passert(frag_stream.start <= iv && iv <= encstart);
 
 	if (!out_raw(payload->ptr, payload->len, &e_pbs_cipher,
 		     "cleartext fragment"))
@@ -2909,27 +2913,25 @@ static stf_status ikev2_record_fragment(struct msg_digest *md,
 	close_output_pbs(&e_pbs_cipher);
 
 	{
-		unsigned char *authloc = ikev2_authloc(st, &e_pbs);
-		int ret;
-
+		uint8_t *authloc = ikev2_authloc(st, &e_pbs);
 		if (authloc == NULL)
 			return STF_INTERNAL_ERROR;
+		passert(frag_stream.start <= iv && iv <= encstart && encstart <= authloc);
 
 		close_output_pbs(&e_pbs);
 		close_output_pbs(&rbody);
 		close_output_pbs(&frag_stream);
 
-		ret = ikev2_encrypt_msg(st, authstart,
-					iv, encstart, authloc,
-					&e_pbs_cipher);
+		stf_status ret = ikev2_encrypt_msg(st, frag_stream.start,
+						   iv, encstart, authloc,
+						   &e_pbs_cipher);
 		if (ret != STF_OK)
 			return ret;
 	}
 
 	*fragp = alloc_thing(struct v2_ike_tfrag, "v2_ike_tfrag");
 	(*fragp)->next = NULL;
-	clonetochunk((*fragp)->cipher, frag_stream.start,
-		     pbs_offset(&frag_stream), desc);
+	(*fragp)->cipher = chunk_clone(pbs_as_chunk(&frag_stream), desc);
 
 	return STF_OK;
 }
@@ -3065,7 +3067,7 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 			libreswan_log("PPK AUTH calculated as initiator");
 		} else {
 			if (pc->policy & POLICY_PPK_INSIST) {
-				loglog(RC_LOG_SERIOUS,("connection requires PPK, but PPK_ID did not match any loaded PPK"));
+				loglog(RC_LOG_SERIOUS,("connection requires PPK, but we didn't find one"));
 				return STF_FATAL;
 			} else {
 				libreswan_log("failed to find PPK and PPK_ID, continuing without PPK");
@@ -3100,13 +3102,10 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 	change_state(pst, STATE_PARENT_I2);
 
 	/* record first packet for later checking of signature */
-	clonetochunk(pst->st_firstpacket_him, md->message_pbs.start,
-		     pbs_offset(&md->message_pbs),
-		     "saved first received packet");
+	pst->st_firstpacket_him = chunk_clone(pbs_as_chunk(&md->message_pbs),
+					      "saved first received packet");
 
 	/* beginning of data going out */
-
-	unsigned char *const authstart = reply_stream.cur;
 
 	/* make sure HDR is at start of a clean buffer */
 	init_out_pbs(&reply_stream, reply_buffer, sizeof(reply_buffer),
@@ -3153,7 +3152,8 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 
 	/* insert IV */
 
-	unsigned char *const iv = e_pbs.cur;
+	uint8_t *const iv = e_pbs.cur;
+	passert(reply_stream.start <= iv);
 
 	if (!emit_wire_iv(cst, &e_pbs))
 		return STF_INTERNAL_ERROR;
@@ -3166,7 +3166,8 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 		 "cleartext");
 	e_pbs_cipher.container = &e_pbs;
 
-	unsigned char *const encstart = e_pbs_cipher.cur;
+	uint8_t *const encstart = e_pbs_cipher.cur;
+	passert(reply_stream.start <= iv && iv <= encstart);
 
 	/* decide whether to send CERT payload */
 
@@ -3224,7 +3225,7 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 		hmac_update(&id_ctx, id_start, id_len);
 		hmac_final(idhash, &id_ctx);
 
-		if (pst->st_sk_pi_no_ppk != NULL) {
+		if (pst->st_seen_ppk && !LIN(POLICY_PPK_INSIST, pc->policy)) {
 			struct hmac_ctx id_ctx_npa;
 
 			hmac_init(&id_ctx_npa, pst->st_oakley.ta_prf, pst->st_sk_pi_no_ppk);
@@ -3371,7 +3372,7 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 			notifies++;
 
 		if (pst->st_seen_ppk)
-			notifies++; /* used for two payloads */
+			notifies++; /* used for one or two payloads */
 
 		/* code does not support AH + ESP, not recommend rfc8221 section-4 */
 		struct ipsec_proto_info *proto_info
@@ -3437,21 +3438,24 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 		}
 		if (pst->st_seen_ppk) {
 			chunk_t notify_data = create_unified_ppk_id(&ppk_id_p);
+			int np = LIN(POLICY_PPK_INSIST, cc->policy) ? ISAKMP_NEXT_v2NONE : ISAKMP_NEXT_v2N;
 
-			notifies--; /* used for 2 payloads */
-				if (!ship_v2N(ISAKMP_NEXT_v2N, ISAKMP_PAYLOAD_NONCRITICAL,
-						PROTO_v2_RESERVED, &empty_chunk,
-						v2N_PPK_IDENTITY, &notify_data,
-						&e_pbs_cipher))
-					return STF_INTERNAL_ERROR;
+			notifies--; /* used for one or two payloads */
+			if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
+					PROTO_v2_RESERVED, &empty_chunk,
+					v2N_PPK_IDENTITY, &notify_data,
+					&e_pbs_cipher))
+				return STF_INTERNAL_ERROR;
 			freeanychunk(notify_data);
 
-			ikev2_calc_no_ppk_auth(cc, pst, idhash_npa, &pst->st_no_ppk_auth);
-			if (!ship_v2N(ISAKMP_NEXT_v2NONE, ISAKMP_PAYLOAD_NONCRITICAL,
-				PROTO_v2_RESERVED, &empty_chunk,
-				v2N_NO_PPK_AUTH, &pst->st_no_ppk_auth,
-				&e_pbs_cipher))
-					return STF_INTERNAL_ERROR;
+			if (!LIN(POLICY_PPK_INSIST, cc->policy)) {
+				ikev2_calc_no_ppk_auth(cc, pst, idhash_npa, &pst->st_no_ppk_auth);
+				if (!ship_v2N(ISAKMP_NEXT_v2NONE, ISAKMP_PAYLOAD_NONCRITICAL,
+					PROTO_v2_RESERVED, &empty_chunk,
+					v2N_NO_PPK_AUTH, &pst->st_no_ppk_auth,
+					&e_pbs_cipher))
+						return STF_INTERNAL_ERROR;
+			}
 		}
 
 		passert(notifies == 0);
@@ -3474,10 +3478,10 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 
 	close_output_pbs(&e_pbs_cipher);
 
-	unsigned char *const authloc = ikev2_authloc(cst, &e_pbs);
-
+	uint8_t *const authloc = ikev2_authloc(cst, &e_pbs);
 	if (authloc == NULL)
 		return STF_INTERNAL_ERROR;
+	passert(reply_stream.start <= iv && iv <= encstart && encstart <= authloc);
 
 	close_output_pbs(&e_pbs);
 	close_output_pbs(&rbody);
@@ -3490,7 +3494,7 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 		return ikev2_record_fragments(md, &hdr, &e, &payload,
 					   "reply fragment for ikev2_parent_outR1_I2");
 	} else {
-		stf_status ret = ikev2_encrypt_msg(pst, authstart,
+		stf_status ret = ikev2_encrypt_msg(pst, reply_stream.start,
 					iv, encstart, authloc,
 					&e_pbs_cipher);
 
@@ -3538,7 +3542,6 @@ static void ikev2_pam_continue(struct state *st, const char *name UNUSED,
 static stf_status ikev2_start_pam_authorize(struct msg_digest *md)
 {
 	struct state *st = md->st;
-	set_suspended(md->st, md);
 
 	char thatid[IDTOA_BUF];
 	idtoa(&st->st_connection->spd.that.id, thatid, sizeof(thatid));
@@ -3573,10 +3576,10 @@ static stf_status ikev2_start_pam_authorize(struct msg_digest *md)
  * [Parent SA established]
  */
 
-static crypto_req_cont_func ikev2_parent_inI2outR2_continue;
-static crypto_transition_fn ikev2_parent_inI2outR2_tail;
+static crypto_req_cont_func ikev2_parent_inI2outR2_continue;	/* type asssertion */
+static crypto_transition_fn ikev2_parent_inI2outR2_tail;	/* forward decl and type assertion */
 
-stf_status ikev2parent_inI2outR2(struct state *st, struct msg_digest *md)
+stf_status ikev2parent_inI2outR2(struct state *st, struct msg_digest *md UNUSED)
 {
 	/* for testing only */
 	if (DBGP(IMPAIR_SEND_NO_IKEV2_AUTH)) {
@@ -3594,7 +3597,7 @@ stf_status ikev2parent_inI2outR2(struct state *st, struct msg_digest *md)
 	    DBG_log("ikev2 parent inI2outR2: calculating g^{xy} in order to decrypt I2"));
 
 	/* initiate calculation of g^xy */
-	start_dh_v2(st, md, "ikev2_inI2outR2 KE",
+	start_dh_v2(st, "ikev2_inI2outR2 KE",
 		    ORIGINAL_RESPONDER, NULL,
 		    NULL, ikev2_parent_inI2outR2_continue);
 	return STF_SUSPEND;
@@ -3675,6 +3678,8 @@ static stf_status ikev2_parent_inI2outR2_tail(struct state *st, struct msg_diges
 
 	atype = md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type;
 	if (IS_LIBUNBOUND && id_ipseckey_allowed(st, atype)) {
+	atype = md->chain[ISAKMP_NEXT_v2AUTH]->payload.v2a.isaa_type;
+			libreswan_log("authmethod2 is %u", atype);
 		ret = idi_ipseckey_fetch(md);
 		if (ret != STF_OK)
 			return ret;
@@ -3820,7 +3825,8 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 	/* process AUTH payload */
 
 	enum keyword_authby that_authby = st->st_connection->spd.that.authby;
-
+			libreswan_log("authby is %s",
+				enum_name(&ikev2_asym_auth_name, that_authby));
 	passert(that_authby != AUTH_NEVER && that_authby != AUTH_UNSET);
 
 	if (!st->st_ppk_used && st->st_no_ppk_auth.ptr != NULL) {
@@ -3871,7 +3877,6 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct msg_digest *md,
 	struct state *const st = md->st;
 	struct connection *const c = st->st_connection;
 	unsigned char idhash_out[MAX_DIGEST_LEN];
-	unsigned char *authstart;
 	unsigned int np;
 
 	if (!pam_status) {
@@ -3896,12 +3901,8 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct msg_digest *md,
 	linux_audit_conn(st, LAK_PARENT_START);
 #endif
 
-	authstart = reply_stream.cur;
 	/* send response */
 	{
-		unsigned char *encstart;
-		unsigned char *iv;
-		unsigned char *authloc;
 		struct ikev2_generic e;
 		pb_stream e_pbs, e_pbs_cipher;
 		bool send_cert = FALSE;
@@ -3966,7 +3967,8 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct msg_digest *md,
 			return STF_INTERNAL_ERROR;
 
 		/* insert IV */
-		iv = e_pbs.cur;
+		uint8_t *iv = e_pbs.cur;
+		passert(reply_stream.start <= iv);
 		if (!emit_wire_iv(st, &e_pbs))
 			return STF_INTERNAL_ERROR;
 
@@ -3976,7 +3978,8 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct msg_digest *md,
 		e_pbs_cipher.container = &e_pbs;
 		e_pbs_cipher.desc = NULL;
 		e_pbs_cipher.cur = e_pbs.cur;
-		encstart = e_pbs_cipher.cur;
+		uint8_t *encstart = e_pbs_cipher.cur;
+		passert(reply_stream.start <= iv && iv <= encstart);
 
 		/* send any NOTIFY payloads */
 		if (st->st_sent_mobike) {
@@ -4151,10 +4154,10 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct msg_digest *md,
 
 		close_output_pbs(&e_pbs_cipher);
 
-		authloc = ikev2_authloc(cst, &e_pbs);
-
+		uint8_t *authloc = ikev2_authloc(cst, &e_pbs);
 		if (authloc == NULL)
 			return STF_INTERNAL_ERROR;
+		passert(reply_stream.start <= iv && iv <= encstart && encstart <= authloc);
 
 		close_output_pbs(&e_pbs);
 		close_output_pbs(&rbody);
@@ -4168,7 +4171,7 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct msg_digest *md,
 			return ikev2_record_fragments(md, &hdr, &e, &payload,
 						   "reply fragment for ikev2_parent_inI2outR2_tail");
 		} else {
-			stf_status ret = ikev2_encrypt_msg(st, authstart,
+			stf_status ret = ikev2_encrypt_msg(st, reply_stream.start,
 						iv, encstart, authloc,
 						&e_pbs_cipher);
 
@@ -5400,9 +5403,6 @@ static stf_status ikev2_child_out_tail(struct msg_digest *md)
 {
 	struct state *st = md->st;
 	struct state *pst = state_with_serialno(st->st_clonedfrom);
-	unsigned char *authstart;
-	unsigned char *encstart;
-	unsigned char *iv;
 	struct ikev2_generic e;
 	pb_stream e_pbs, e_pbs_cipher;
 	stf_status ret;
@@ -5414,7 +5414,6 @@ static stf_status ikev2_child_out_tail(struct msg_digest *md)
 		ikev2_log_parentSA(st);
 
 	init_out_pbs(&reply_stream, reply_buffer, sizeof(reply_buffer), "reply packet");
-	authstart = reply_stream.cur;
 
 	/* HDR out Start assembling respone message */
 	pb_stream rbody;
@@ -5458,9 +5457,10 @@ static stf_status ikev2_child_out_tail(struct msg_digest *md)
 		return STF_INTERNAL_ERROR;
 
 	/* IV */
-	iv = e_pbs.cur;
+	uint8_t *iv = e_pbs.cur;
 	if (!emit_wire_iv(pst, &e_pbs))
 		return STF_INTERNAL_ERROR;
+	passert(reply_stream.start <= iv);
 
 	/* note where cleartext starts */
 	init_pbs(&e_pbs_cipher, e_pbs.cur, e_pbs.roof - e_pbs.cur,
@@ -5469,7 +5469,8 @@ static stf_status ikev2_child_out_tail(struct msg_digest *md)
 	e_pbs_cipher.container = &e_pbs;
 	e_pbs_cipher.desc = NULL;
 	e_pbs_cipher.cur = e_pbs.cur;
-	encstart = e_pbs_cipher.cur;
+	uint8_t *encstart = e_pbs_cipher.cur;
+	passert(reply_stream.start <= iv && iv <= encstart);
 
 	if (st->st_state == STATE_V2_REKEY_IKE_R) {
 		ret = ikev2_child_add_ike_payloads(md, &e_pbs_cipher);
@@ -5503,15 +5504,16 @@ static stf_status ikev2_child_out_tail(struct msg_digest *md)
 	close_output_pbs(&e_pbs_cipher);
 
 	{
-		unsigned char *authloc = ikev2_authloc(pst, &e_pbs);
-
+		uint8_t *authloc = ikev2_authloc(pst, &e_pbs);
 		if (authloc == NULL)
 			return STF_INTERNAL_ERROR;
+		passert(reply_stream.start <= iv && iv <= encstart && encstart <= authloc);
 
 		close_output_pbs(&e_pbs);
 		close_output_pbs(&rbody);
 		close_output_pbs(&reply_stream);
-		ret = ikev2_encrypt_msg(pst, authstart, iv, encstart,
+		ret = ikev2_encrypt_msg(pst, reply_stream.start,
+					iv, encstart,
 					authloc, &e_pbs_cipher);
 
 		if (ret != STF_OK)
@@ -5974,7 +5976,6 @@ stf_status process_encrypted_informational_ikev2(struct state *st,
 	pb_stream e_pbs, e_pbs_cipher;
 	unsigned char *iv = NULL;	/* initialized to silence GCC */
 	unsigned char *encstart = NULL;	/* initialized to silence GCC */
-	unsigned char *authstart = reply_stream.cur;
 
 	pb_stream rbody;
 
@@ -6238,7 +6239,7 @@ stf_status process_encrypted_informational_ikev2(struct state *st,
 			close_output_pbs(&reply_stream);
 
 			stf_status ret =
-				ikev2_encrypt_msg(st, authstart,
+				ikev2_encrypt_msg(st, reply_stream.start,
 						iv, encstart, authloc,
 						&e_pbs_cipher);
 			if (ret != STF_OK)
@@ -6320,7 +6321,6 @@ stf_status ikev2_send_informational(struct state *st, struct state *pst,
 	 * We don't use reply_buffer/reply_stream because it might be in use.
 	 */
 	u_char buffer[1024];	/* ??? large enough for any informational? */
-	unsigned char *authstart;
 	unsigned char *encstart;
 	unsigned char *iv;
 
@@ -6349,7 +6349,6 @@ stf_status ikev2_send_informational(struct state *st, struct state *pst,
 
 	init_out_pbs(&reply_stream, buffer, sizeof(buffer),
 			"informational exchange request packet");
-	authstart = reply_stream.cur;
 
 	/* HDR out */
 	{
@@ -6418,7 +6417,7 @@ stf_status ikev2_send_informational(struct state *st, struct state *pst,
 		close_output_pbs(&rbody);
 		close_output_pbs(&reply_stream);
 
-		ret = ikev2_encrypt_msg(st, authstart,
+		ret = ikev2_encrypt_msg(st, reply_stream.start,
 				iv, encstart, authloc,
 				&e_pbs_cipher);
 		if (ret != STF_OK)
@@ -6447,7 +6446,6 @@ stf_status ikev2_send_informational(struct state *st, struct state *pst,
 
 static bool ikev2_delete_out_guts(struct state *const st, struct state *const pst)
 {
-	unsigned char *authstart;
 	pb_stream e_pbs, e_pbs_cipher;
 	pb_stream rbody;
 	struct ikev2_generic e;
@@ -6457,8 +6455,6 @@ static bool ikev2_delete_out_guts(struct state *const st, struct state *const ps
 	/* make sure HDR is at start of a clean buffer */
 	init_out_pbs(&reply_stream, reply_buffer, sizeof(reply_buffer),
 		 "information exchange request packet");
-	/* beginning of data going out */
-	authstart = reply_stream.cur;
 
 	/* HDR out */
 	{
@@ -6566,7 +6562,7 @@ static bool ikev2_delete_out_guts(struct state *const st, struct state *const ps
 		close_output_pbs(&rbody);
 		close_output_pbs(&reply_stream);
 
-		ret = ikev2_encrypt_msg(st, authstart,
+		ret = ikev2_encrypt_msg(st, reply_stream.start,
 					iv, encstart, authloc,
 					&e_pbs_cipher);
 		if (ret != STF_OK)

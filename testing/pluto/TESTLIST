@@ -432,6 +432,10 @@ kvmplutotest	rawrsaoe-asymetric-nat			good
 kvmplutotest	rawrsaoe-asymetric-01			good
 kvmplutotest	dnsoe-01				good
 kvmplutotest	dnsoe-02				good
+kvmplutotest	dnsoe-03				wip
+kvmplutotest	dnsoe-04				good
+kvmplutotest	dnsoe-05				good
+kvmplutotest	dnsoe-06				wip
 
 kvmplutotest	ikev2-initiate-template-01		good
 
@@ -483,6 +487,7 @@ kvmplutotest	ikev2-child-ipsec-pfs-nhelpers-0 good
 kvmplutotest	ikev2-child-ipsec-replace-ike	good
 kvmplutotest	ikev2-child-ipsec-responder	good
 kvmplutotest	ikev2-child-ipsec-timer		wip
+kvmplutotest	ikev2-child-ipsec-retransmit	good
 kvmplutotest	ikev2-56-restart		skiptest
 kvmplutotest	ikev2-child-restart-mismatch 	wip
 kvmplutotest	ikev2-cp-01-resolvconf	good
@@ -690,7 +695,7 @@ kvmplutotest	interop-ikev2-strongswan-26-ke-mismatch-responder	good
 kvmplutotest	interop-ikev1-strongswan-15-twofish		good
 kvmplutotest	interop-ikev1-strongswan-16-serpent		good
 kvmplutotest	interop-ikev2-strongswan-31-asymmetric-responder	good
-kvmplutotest	interop-ikev2-strongswan-32-ip-lease		wip
+kvmplutotest	interop-ikev2-strongswan-32-ip-lease		good
 kvmplutotest	interop-ikev1-strongswan-x509-aggr-12-san-dn-match	good
 kvmplutotest	interop-ikev1-strongswan-x509-aggr-13-san-dn-match-responder good
 
@@ -777,6 +782,8 @@ kvmplutotest	interop-ikev2-strongswan-36-esp-gmac-responder	good
 kvmplutotest	interop-ikev2-strongswan-37-initiator-digsig	good
 kvmplutotest	interop-ikev2-strongswan-38-digsig-impair	good
 kvmplutotest	interop-ikev2-strongswan-39-fragmentation-aes-gcm	good
+kvmplutotest    interop-ikev2-strongswan-40-initiator-rsa-pss-sha256    good
+kvmplutotest    interop-ikev2-strongswan-41-responder-rsa-pss-sha256    good
 kvmplutotest	interop-ikev2-pluto-01-integ-null		good
 
 #################################################################

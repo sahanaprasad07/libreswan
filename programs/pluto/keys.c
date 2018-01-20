@@ -12,6 +12,7 @@
  * Copyright (C) 2015 Paul Wouters <pwouters@redhat.com>
  * Copyright (C) 2016, Andrew Cagney <cagney@gnu.org>
  * Copyright (C) 2017 Vukasin Karadzic <vukasin.karadzic@gmail.com>
+ * Copyright (C) 2018 Sahana Prasad <sahana.prasad07@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -53,6 +54,7 @@
 #include "log.h"
 #include "whack.h"      /* for RC_LOG_SERIOUS */
 #include "timer.h"
+#include "ike_alg_sha2.h"
 
 #include "fetch.h"
 #include "pluto_x509.h"
@@ -74,6 +76,7 @@
 #include "lswconf.h"
 #include "lswnss.h"
 #include "secrets.h"
+#include <sechash.h>
 
 static struct secret *pluto_secrets = NULL;
 
@@ -145,13 +148,14 @@ void list_psks(void)
 /* returns the length of the result on success; 0 on failure */
 int sign_hash(const struct RSA_private_key *k,
 		  const u_char *hash_val, size_t hash_len,
-		  u_char *sig_val, size_t sig_len)
+		  u_char *sig_val, size_t sig_len, bool version,
+		  enum notify_payload_hash_algorithms rsa_hash_algo)
 {
+	(void) version;
 	SECKEYPrivateKey *privateKey = NULL;
 	SECItem signature;
 	SECItem data;
 	PK11SlotInfo *slot = NULL;
-
 	DBG(DBG_CRYPT, DBG_log("RSA_sign_hash: Started using NSS"));
 
 	slot = PK11_GetInternalKeySlot();
@@ -212,15 +216,47 @@ int sign_hash(const struct RSA_private_key *k,
 
 	signature.len = sig_len;
 	signature.data = sig_val;
+	
+	CK_RSA_PKCS_PSS_PARAMS mech; /* for RSA-PSS only */
+	
+	if (rsa_hash_algo == 0 /* ikev1*/ || 
+		rsa_hash_algo == IKEv2_AUTH_HASH_SHA1 /* old style rsa with SHA1*/) {
+		{
+			SECStatus s = PK11_Sign(privateKey, &signature, &data);
 
-	{
-		SECStatus s = PK11_Sign(privateKey, &signature, &data);
+			if (s != SECSuccess) {
+				loglog(RC_LOG_SERIOUS,
+					"RSA_sign_hash: sign function failed (%d)",
+					PR_GetError());
+				return 0;
+			}
+		}
+	} else { /* Digital signature scheme with rsa-pss*/
+		switch (rsa_hash_algo) {
+		case IKEv2_AUTH_HASH_SHA2_256:
+			mech = rsa_pss_sha2_256;
+			break;
+		case IKEv2_AUTH_HASH_SHA2_384:
+			mech = rsa_pss_sha2_384;
+			break;
+		case IKEv2_AUTH_HASH_SHA2_512:
+			mech = rsa_pss_sha2_512;
+			break;
+		default:
+			bad_case(rsa_hash_algo);
+		}
+		SECItem mechItem = { siBuffer, (unsigned char *)&mech, sizeof(mech) };
 
-		if (s != SECSuccess) {
-			loglog(RC_LOG_SERIOUS,
-			       "RSA_sign_hash: sign function failed (%d)",
-			       PR_GetError());
-			return 0;
+		{
+			SECStatus s = PK11_SignWithMechanism(privateKey, CKM_RSA_PKCS_PSS,
+					&mechItem, &signature, &data);
+
+			if (s != SECSuccess) {
+				loglog(RC_LOG_SERIOUS,
+					"RSA_sign_hash: sign function failed (%d)",
+					PR_GetError());
+				return 0;
+			}
 		}
 	}
 
@@ -232,13 +268,18 @@ int sign_hash(const struct RSA_private_key *k,
 
 err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 			       const u_char *hash_val, size_t hash_len,
-			       const u_char *sig_val, size_t sig_len)
+			       const u_char *sig_val, size_t sig_len,
+			       bool version,
+			       enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	SECKEYPublicKey *publicKey;
 	PRArenaPool *arena;
 	SECStatus retVal;
 	SECItem nss_n, nss_e;
 	SECItem signature, data;
+	(void) version;
+	(void) rsa_hash_algo;
+
 
 	/* Converting n and e to form public key in SECKEYPublicKey data structure */
 
@@ -291,32 +332,80 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	signature.data = DISCARD_CONST(unsigned char *, sig_val);
 	signature.len  = (unsigned int)sig_len;
 
-	data.len = (unsigned int)sig_len;
-	data.data = alloc_bytes(data.len, "NSS decrypted signature");
 	data.type = siBuffer;
+	if (rsa_hash_algo == 0 /* ikev1*/ || 
+				rsa_hash_algo == IKEv2_AUTH_HASH_SHA1 /* old style rsa with SHA1*/) {
 
-	if (PK11_VerifyRecover(publicKey, &signature, &data,
-			       lsw_return_nss_password_file_info()) ==
-	    SECSuccess ) {
-		DBG(DBG_CRYPT,
-		    DBG_dump("NSS RSA verify: decrypted sig: ", data.data,
-			     data.len));
-	} else {
-		DBG(DBG_CRYPT,
-		    DBG_log("NSS RSA verify: decrypting signature is failed"));
-		return "13" "NSS error: Not able to decrypt";
-	}
+		data.len = (unsigned int)sig_len;
+		data.data = alloc_bytes(data.len, "NSS decrypted signature");
 
-	if (!memeq(data.data + data.len - hash_len, hash_val, hash_len)) {
+		if (PK11_VerifyRecover(publicKey, &signature, &data,
+				       lsw_return_nss_password_file_info()) ==
+		   SECSuccess ) {
+		       DBG(DBG_CRYPT,
+			   DBG_dump("NSS RSA verify: decrypted sig: ", data.data,
+				     data.len));
+		} else {
+			DBG(DBG_CRYPT,
+			    DBG_log("NSS RSA verify: decrypting signature is failed"));
+			return "13" "NSS error: Not able to decrypt";
+		}
+		if (!memeq(data.data + data.len - hash_len, hash_val, hash_len)) {
+			pfree(data.data);
+			loglog(RC_LOG_SERIOUS, "RSA Signature NOT verified");
+			return "14" "NSS error: Not able to verify";
+		}
+
 		pfree(data.data);
-		loglog(RC_LOG_SERIOUS, "RSA Signature NOT verified");
-		return "14" "NSS error: Not able to verify";
+
+	} else { /* Digital signature scheme with RSA-PSS */
+
+
+		CK_RSA_PKCS_PSS_PARAMS mech;
+		SECItem mechItem = { siBuffer, (unsigned char *)&mech, sizeof(mech) };
+
+		switch (rsa_hash_algo) {
+		case IKEv2_AUTH_HASH_SHA2_256:
+			mech = rsa_pss_sha2_256;
+			break;
+		case IKEv2_AUTH_HASH_SHA2_384:
+			mech = rsa_pss_sha2_384;
+			break;
+		case IKEv2_AUTH_HASH_SHA2_512:
+			mech = rsa_pss_sha2_512;
+			break;
+		default:
+			bad_case(rsa_hash_algo);
+		}
+		
+		unsigned char *hash_data = alloc_bytes(hash_len + 1 , "hash length");
+
+		data.len = hash_len + 1;
+		memcpy(hash_data , DISCARD_CONST(u_char *, hash_val), hash_len);
+		data.data = hash_data;
+		
+		       DBG(DBG_CRYPT,
+			   DBG_dump("data.data: data.len: ", data.data,
+				     data.len));
+
+		if (PK11_VerifyWithMechanism(publicKey, CKM_RSA_PKCS_PSS,  &mechItem, &signature, &data,
+				       lsw_return_nss_password_file_info()) ==
+		   SECSuccess ) {
+		       DBG(DBG_CRYPT,
+			   DBG_dump("NSS RSA verify: decrypted sig: ", data.data,
+			             data.len));
+		} else {
+			DBG(DBG_CRYPT,
+			    DBG_log("NSS RSA verify: decrypting signature is failed"));
+			return "13" "NSS error: Not able to decrypt";
+		}
+		
+		pfree(hash_data);
 	}
 
 	DBG(DBG_CRYPT,
 	    DBG_dump("NSS RSA verify: hash value: ", hash_val, hash_len));
 
-	pfree(data.data);
 	pfree(n.ptr);
 	pfree(e.ptr);
 	SECKEY_DestroyPublicKey(publicKey);
@@ -343,12 +432,16 @@ struct tac_state {
 	const u_char *hash_val;
 	size_t hash_len;
 	const pb_stream *sig_pbs;
+	bool version;
+	enum notify_payload_hash_algorithms rsa_hash_algo;
 
 	err_t (*try_RSA_signature)(const u_char hash_val[MAX_DIGEST_LEN],
 				   size_t hash_len,
 				   const pb_stream *sig_pbs,
 				   struct pubkey *kr,
-				   struct state *st);
+				   struct state *st,
+				   bool version,
+				   enum notify_payload_hash_algorithms rsa_hash_algo);
 
 	/* state carried between calls */
 	err_t best_ugh; /* most successful failure */
@@ -363,7 +456,7 @@ static bool take_a_crack(struct tac_state *s,
 {
 	err_t ugh =
 		(s->try_RSA_signature)(s->hash_val, s->hash_len, s->sig_pbs,
-				       kr, s->st);
+				       kr, s->st, s->version, s->rsa_hash_algo);
 	const struct RSA_public_key *k = &kr->u.rsa;
 
 	s->tried_cnt++;
@@ -393,12 +486,16 @@ stf_status RSA_check_signature_gen(struct state *st,
 				   const u_char hash_val[MAX_DIGEST_LEN],
 				   size_t hash_len,
 				   const pb_stream *sig_pbs,
+				   bool version,
+				   enum notify_payload_hash_algorithms rsa_hash_algo,
 				   err_t (*try_RSA_signature)(
 					   const u_char hash_val[MAX_DIGEST_LEN],
 					   size_t hash_len,
 					   const pb_stream *sig_pbs,
 					   struct pubkey *kr,
-					   struct state *st))
+					   struct state *st,
+					   bool version,
+					   enum notify_payload_hash_algorithms rsa_hash_algo))
 {
 	const struct connection *c = st->st_connection;
 	struct tac_state s;
@@ -407,12 +504,12 @@ stf_status RSA_check_signature_gen(struct state *st,
 	s.hash_val = hash_val;
 	s.hash_len = hash_len;
 	s.sig_pbs = sig_pbs;
+	s.version = version;
+	s.rsa_hash_algo = rsa_hash_algo;
 	s.try_RSA_signature = try_RSA_signature;
-
 	s.best_ugh = NULL;
 	s.tried_cnt = 0;
 	s.tn = s.tried;
-
 	/* try all appropriate Public keys */
 	{
 		realtime_t nw = realnow();
