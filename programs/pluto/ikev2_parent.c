@@ -102,19 +102,24 @@ static void ikev2_calc_dcookie(u_char *dcookie, chunk_t st_ni,
 static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 					    struct state *st);
 
-static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t policy)
+static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t sighash_policy)
 {
 	u_int16_t hash_algo_to_send;
 	chunk_t hash;
 
-	switch (policy) {
-	case POLICY_RSASIG:
-		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA1);
+	if (sighash_policy & POL_SIGHASH_SHA2_256) {
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_256);
 		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
-		break;
-	default:
-		bad_case(policy);
 	}
+	else if (sighash_policy & POL_SIGHASH_SHA2_384) {
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_384);
+		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
+	}
+	else if (sighash_policy & POL_SIGHASH_SHA2_512) {
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_512);
+		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
+	} else
+		return FALSE;
 
 	if (!ship_v2N(np, ISAKMP_PAYLOAD_NONCRITICAL,
 		      PROTO_v2_RESERVED, &empty_chunk,
@@ -535,8 +540,8 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	pb_stream *pbs,
 	const enum keyword_authby that_authby)
 {
-	unsigned char check_rsa_sha1_blob[ASN1_SHA1_RSA_OID_SIZE] = {0x0};
-	unsigned char check_length_rsa_sha1_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
+	unsigned char check_rsa_pss_sha256_blob[ASN1_SHA2_256_RSA_PSS_OID_SIZE] = {0x0};
+	unsigned char check_length_rsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -546,11 +551,12 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 			return FALSE;
 		}
 
-		stf_status authstat = ikev2_verify_rsa_sha1(
+		stf_status authstat = ikev2_verify_rsa_hash(
 				st,
 				role,
 				idhash_in,
-				pbs);
+				pbs,
+				IKEv2_AUTH_HASH_SHA1);
 
 		if (authstat != STF_OK) {
 			libreswan_log("RSA authentication failed");
@@ -605,23 +611,24 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
-		if (!in_raw(check_length_rsa_sha1_blob, ASN1_LEN_ALGO_IDENTIFIER, pbs,
+		if (!in_raw(check_length_rsa_sha2_blob, ASN1_LEN_ALGO_IDENTIFIER, pbs,
 				"Algorithm Identifier length"))
 			return FALSE;
-		if (!memeq(check_length_rsa_sha1_blob, len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER))
+		if (!memeq(check_length_rsa_sha2_blob, len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER))
 			return FALSE;
 
-		if (!in_raw(check_rsa_sha1_blob, ASN1_SHA1_RSA_OID_SIZE, pbs,
+		if (!in_raw(check_rsa_pss_sha256_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE, pbs,
 				"Algorithm Identifier value"))
 			return FALSE;
-		if (!memeq(check_rsa_sha1_blob, sha1_rsa_oid_blob, ASN1_SHA1_RSA_OID_SIZE))
+		if (!memeq(check_rsa_pss_sha256_blob, sha256_rsa_pss_oid_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE))
 			return FALSE;
 
-		stf_status authstat = ikev2_verify_rsa_sha1(
+		stf_status authstat = ikev2_verify_rsa_hash(
 				st,
 				role,
 				idhash_in,
-				pbs);
+				pbs,
+				IKEv2_AUTH_HASH_SHA2_256);
 
 		if (authstat != STF_OK) {
 			libreswan_log("Digital Signature authentication failed");
@@ -1027,8 +1034,8 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md UNUSED,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
 	if (!DBGP(IMPAIR_OMIT_HASH_NOTIFY_REQUEST)) {
-		if (c->policy & POLICY_RSASIG) {
-			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, POLICY_RSASIG))
+		if ((c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
 	} else {
@@ -1641,8 +1648,8 @@ static stf_status ikev2_parent_inI1outR1_continue_tail(struct state *st,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
 	if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
-		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG)) {
-			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, POLICY_RSASIG))
+		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
 	} else {
@@ -2905,9 +2912,10 @@ static stf_status ikev2_send_auth(struct connection *c,
 
 	switch (a.isaa_type) {
 	case IKEv2_AUTH_RSA:
-		if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs,
+		if (!ikev2_calculate_rsa_hash(pst, role, idhash_out, &a_pbs,
 			FALSE, /* store-only not set */
-			NULL /* store-only chunk unused */)) {
+			NULL /* store-only chunk unused */,
+			IKEv2_AUTH_HASH_SHA1)) {
 			loglog(RC_LOG_SERIOUS, "Failed to find our RSA key");
 			return STF_FATAL;
 		}
@@ -2923,22 +2931,23 @@ static stf_status ikev2_send_auth(struct connection *c,
 		}
 		break;
 	case IKEv2_AUTH_DIGSIG:
-		if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA1) {
-			if (!out_raw(len_sha1_rsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
-				"Length of the ASN.1 Algorithm Identifier sha1WithRSAEncryption")) {
-					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-SHA1 OID length");
+		if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA2_256) {
+			if (!out_raw(len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
+				"Length of the ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
+					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID length");
 					return STF_INTERNAL_ERROR;
 			}
 
-			if (!out_raw(sha1_rsa_oid_blob, ASN1_SHA1_RSA_OID_SIZE, &a_pbs,
-				"OID of ASN.1 Algorithm Identifier sha1WithRSAEncryption")) {
-					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-SHA1 OID");
+			if (!out_raw(sha256_rsa_pss_oid_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE, &a_pbs,
+				"OID of ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
+					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID");
 					return STF_INTERNAL_ERROR;
 			}
 
-			if (!ikev2_calculate_rsa_sha1(pst, role, idhash_out, &a_pbs,
+			if (!ikev2_calculate_rsa_hash(pst, role, idhash_out, &a_pbs,
 				FALSE, /* store-only not set */
-				NULL /* store-only chunk unused */)) {
+				NULL /* store-only chunk unused */,
+				IKEv2_AUTH_HASH_SHA2_256)) {
 				loglog(RC_LOG_SERIOUS, "DigSig: failed to find our RSA key");
 				return STF_FATAL;
 			}

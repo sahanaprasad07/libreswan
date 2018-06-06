@@ -391,8 +391,10 @@ main_mode_hash(struct state *st,
  */
 size_t RSA_sign_hash(struct connection *c,
 		u_char sig_val[RSA_MAX_OCTETS],
-		const u_char *hash_val, size_t hash_len)
+		const u_char *hash_val, size_t hash_len,
+		enum notify_payload_hash_algorithms rsa_hash_algo)
 {
+	(void) rsa_hash_algo;
 	size_t sz;
 	int shr;
 	const struct RSA_private_key *k = get_RSA_private_key(c);
@@ -404,7 +406,8 @@ size_t RSA_sign_hash(struct connection *c,
 	passert(RSA_MIN_OCTETS <= sz &&
 		4 + hash_len < sz &&
 		sz <= RSA_MAX_OCTETS);
-	shr = sign_hash(k, hash_val, hash_len, sig_val, sz);
+	shr = sign_hash(k, hash_val, hash_len, sig_val, sz,
+			FALSE /* for ikev2 only */, 0 /* for ikev2 only */);
 	passert(shr == 0 || (int)sz == shr);
 	return shr;
 }
@@ -440,11 +443,14 @@ size_t RSA_sign_hash(struct connection *c,
 static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 				size_t hash_len,
 				const pb_stream *sig_pbs, struct pubkey *kr,
-				struct state *st)
+				struct state *st,bool version,
+				enum notify_payload_hash_algorithms rsa_hash_algo)
 {
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct RSA_public_key *k = &kr->u.rsa;
+	(void) version; /* Unused. For ikev2 only */
+	(void) rsa_hash_algo; /* Unused. For ikev2 only*/
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
 	if (sig_len != k->k) {
@@ -453,7 +459,8 @@ static err_t try_RSA_signature_v1(const u_char hash_val[MAX_DIGEST_LEN],
 	}
 
 	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
-					sig_len);
+					sig_len, FALSE /* For ikev2 only */,
+					0 /*ikev2 only */);
 	if (ugh != NULL)
 		return ugh;
 
@@ -474,7 +481,8 @@ static stf_status RSA_check_signature(struct state *st,
 				const pb_stream *sig_pbs)
 {
 	return RSA_check_signature_gen(st, hash_val, hash_len,
-				sig_pbs, try_RSA_signature_v1);
+				sig_pbs, FALSE /* ikev2 */ , 0 /*ikev2 only */,
+				try_RSA_signature_v1);
 }
 
 notification_t accept_v1_nonce(struct msg_digest *md, chunk_t *dest,
@@ -1508,7 +1516,7 @@ static stf_status main_inR2_outI3_continue_tail(struct msg_digest *md,
 			u_char sig_val[RSA_MAX_OCTETS];
 			size_t sig_len = RSA_sign_hash(st->st_connection,
 						sig_val, hash_val,
-						hash_len);
+						hash_len, 0 /* for ikev2 only */);
 
 			if (sig_len == 0) {
 				loglog(RC_LOG_SERIOUS,
@@ -1861,7 +1869,7 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 			u_char sig_val[RSA_MAX_OCTETS];
 			size_t sig_len = RSA_sign_hash(st->st_connection,
 						sig_val, hash_val,
-						hash_len);
+						hash_len, 0 /* for ikev2 only */);
 
 			if (sig_len == 0) {
 				loglog(RC_LOG_SERIOUS,

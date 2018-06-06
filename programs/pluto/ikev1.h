@@ -83,7 +83,8 @@ extern bool ikev1_ship_ca_chain(cert_t chain, cert_t ee,
 					      bool send_full_chain);
 extern size_t RSA_sign_hash(struct connection *c,
 			    u_char sig_val[RSA_MAX_OCTETS],
-			    const u_char *hash_val, size_t hash_len);
+			    const u_char *hash_val, size_t hash_len,
+			    enum notify_payload_hash_algorithms rsa_hash_algo);
 
 extern size_t                           /* length of hash */
 main_mode_hash(struct state *st,

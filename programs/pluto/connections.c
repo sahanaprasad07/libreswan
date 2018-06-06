@@ -1383,6 +1383,11 @@ void add_connection(const struct whack_message *wm)
 		}
 	}
 
+	if (wm->sighash_policy != POL_SIGHASH_NONE && (wm->policy & POLICY_IKEV1_ALLOW)) {
+		loglog(RC_FATAL, "MOBIKE requires ikev2=insist");
+		return;
+	}
+
 	if (wm->policy & POLICY_MOBIKE) {
 		if (!migrate_xfrm_sa_check()) {
 			loglog(RC_FATAL, "MOBIKE missing kernel support CONFIG_XFRM_MIGRATE && CONFIG_NET_KEY_MIGRATE");
@@ -1510,6 +1515,10 @@ void add_connection(const struct whack_message *wm)
 		c->connalias = wm->connalias;
 		c->dnshostname = wm->dnshostname;
 		c->policy = wm->policy;
+		c->sighash_policy = wm->sighash_policy;
+		loglog(RC_FATAL,
+			"sighash in connections is  %ld",
+				c->sighash_policy);
 		if (NEVER_NEGOTIATE(c->policy)) {
 			/* cleanup inherited default */
 			c->policy &= ~(POLICY_IKEV1_ALLOW|POLICY_IKEV2_ALLOW);
