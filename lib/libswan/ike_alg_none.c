@@ -55,13 +55,13 @@ const struct encrypt_desc ike_alg_encrypt_null =
  * This gets negotiated and can ever go across the wire.
  */
 const struct integ_desc ike_alg_integ_none = {
-       .common = {
-               .name = "none",
-               .fqn = "NONE",
-	       .names = { "none", "null", },
-	       .officname = "none",
-	       .algo_type = IKE_ALG_INTEG,
-	       .id = {
+	.common = {
+		.name = "none",
+		.fqn = "NONE",
+		.names = { "none", "null", },
+		.officname = "none",
+		.algo_type = IKE_ALG_INTEG,
+		.id = {
 			/*
 			 * Not [IKEv1_OAKLEY_ID] = AUTH_ALGORITHM_NONE
 			 * or AUTH_ALGORITHM_NULL_KAME?
@@ -78,15 +78,15 @@ const struct integ_desc ike_alg_integ_none = {
 			[IKEv1_ESP_ID] = ESP_reserved,
 			[IKEv2_ALG_ID] = IKEv2_AUTH_NONE,
 		},
-	       /*
+		/*
 		* Because aes_gcm-null is valid in FIPS mode, "none"
 		* integrity is an allowed FIPS algorithm.
 		*
 		* Other code gets the job of rejecting "none" when not
 		* AEAD.
 		*/
-	       .fips = true,
-       },
+		.fips = true,
+	},
 };
 
 /*
@@ -104,6 +104,15 @@ const struct oakley_group_desc ike_alg_dh_none = {
 			[IKEv1_ESP_ID] = -1,
 			[IKEv2_ALG_ID] = OAKLEY_GROUP_NONE,
 		},
+		/*
+		 * IKEv2, during the initial exchanges, negotiates a
+		 * child SA without DH (or if screwing with the RFC,
+		 * DH=NONE).  Either way, the result is a child state
+		 * with .ta_dh == &ike_alg_dh_none.
+		 *
+		 * Other code gets the job of rejecting "none".
+		 */
+		.fips = true,
 	},
 	.group = OAKLEY_GROUP_NONE,
 	/*

@@ -106,8 +106,8 @@
  * - a whole number
  * - larger is more important
  * - three subcomponents.  In order of decreasing significance:
- *   + length of source subnet mask (8 bits)
- *   + length of destination subnet mask (8 bits)
+ *   + length of source subnet mask (9 bits)
+ *   + length of destination subnet mask (9 bits)
  *   + bias (8 bit)
  * - a bias of 1 is added to allow prio BOTTOM_PRIO to be less than all
  *   normal priorities
@@ -116,12 +116,14 @@
  * - priority is inherited -- an instance of a policy has the same priority
  *   as the original policy, even though its subnets might be smaller.
  * - display format: n,m
+ *
+ * ??? These are NOT the same as sa_priorities but eventually they should be aligned.
  */
 typedef uint32_t policy_prio_t;
 #define BOTTOM_PRIO   ((policy_prio_t)0)        /* smaller than any real prio */
 
 #define set_policy_prio(c) { (c)->prio = \
-		  ((policy_prio_t)(c)->spd.this.client.maskbits << 16) \
+		  ((policy_prio_t)(c)->spd.this.client.maskbits << 17) \
 		| ((policy_prio_t)(c)->spd.that.client.maskbits << 8) \
 		|  (policy_prio_t)1; }
 
@@ -137,6 +139,8 @@ extern void fmt_policy_prio(policy_prio_t pp, char buf[POLICY_PRIO_BUF]);
 #include <sys/queue.h>
 #include "id.h"    /* for struct id */
 #include "lmod.h"
+#include "reqid.h"
+#include "err.h"
 #include "state.h"
 
 struct virtual_t;
@@ -145,7 +149,6 @@ struct host_pair;	/* opaque type */
 
 struct end {
 	struct id id;
-	bool left;
 
 	enum keyword_host host_type;
 	char *host_addr_name;	/* string version from whack */
@@ -153,7 +156,9 @@ struct end {
 		host_addr,
 		host_nexthop,
 		host_srcip;
-	ip_subnet client, host_vtiip;
+	ip_subnet
+		client,
+		host_vtiip;
 
 	bool key_from_DNS_on_demand;
 	bool has_client;
@@ -176,7 +181,7 @@ struct end {
 
 	bool xauth_server;
 	bool xauth_client;
-	char *username;
+	char *xauth_username;
 	char *xauth_password;
 	ip_range pool_range;	/* store start of v4 addresspool */
 	/*
@@ -243,7 +248,7 @@ struct connection {
 	deltatime_t r_timeout; /* max time (in secs) for one packet exchange attempt */
 	reqid_t sa_reqid;
 	int encapsulation;
-	enum nic_offload_options nic_offload;
+	enum yna_options nic_offload;
 
 	/* RFC 3706 DPD */
 	deltatime_t dpd_delay;		/* time between checks */
@@ -257,7 +262,7 @@ struct connection {
 	bool mobike;			/* Allow MOBIKE */
 	bool send_vendorid;		/* Send our vendorid? Security vs Debugging help */
 	enum ikev1_natt_policy ikev1_natt; /* whether or not to send IKEv1 draft/rfc NATT VIDs */
-	enum encaps_options encaps; /* encapsulation mode of auto/yes/no - formerly forceencaps=yes/no */
+	enum yna_options encaps; /* encapsulation mode of auto/yes/no - formerly forceencaps=yes/no */
 
 	/* Network Manager support */
 #ifdef HAVE_NM
@@ -517,8 +522,6 @@ void connection_check_ddns(void);
 
 void connection_check_phase2(void);
 void init_connections(void);
-
-extern void setup_client_ports(struct spd_route *sr);
 
 extern int foreach_connection_by_alias(const char *alias,
 				       int (*f)(struct connection *c,

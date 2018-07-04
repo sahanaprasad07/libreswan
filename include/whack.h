@@ -24,9 +24,12 @@
 #define _WHACK_H
 
 #include "ietf_constants.h"
+#include "lset.h"
 #include "lmod.h"
 #include "deltatime.h"
 #include "chunk.h"
+#include "reqid.h"
+#include "err.h"
 
 #ifndef DEFAULT_RUNDIR
 # define DEFAULT_RUNDIR "/run/pluto/"
@@ -66,7 +69,7 @@
  * version number.
  */
 enum whack_pubkey_type {
-	WHACK_PUBKEY_NONE,
+	WHACK_PUBKEY_NONE = 0,	/* must be zero (to make it default) */
 	WHACK_PUBKEY_CERTIFICATE_NICKNAME,
 	WHACK_PUBKEY_CKAID,
 };
@@ -103,7 +106,7 @@ struct whack_end {
 	ip_range pool_range;	/* store start of v4 addresspool */
 	bool xauth_server;	/* for XAUTH */
 	bool xauth_client;
-	char *username;
+	char *xauth_username;
 	bool modecfg_server;	/* for MODECFG */
 	bool modecfg_client;
 	bool cat;		/* IPv4 Client Address Translation */
@@ -168,7 +171,7 @@ struct whack_message {
 	unsigned long sa_replay_window;
 	deltatime_t r_timeout; /* in secs */
 	deltatime_t r_interval; /* in msec */
-	enum nic_offload_options nic_offload;
+	enum yna_options nic_offload;
 
 	/* For IKEv1 RFC 3706 - Dead Peer Detection */
 	deltatime_t dpd_delay;
@@ -180,7 +183,7 @@ struct whack_message {
 	enum keyword_remotepeertype remotepeertype;
 
 	/* Force the use of NAT-T on a connection */
-	enum encaps_options encaps;
+	enum yna_options encaps;
 
 	/* Option to allow per-conn setting of sending of NAT-T keepalives - default is enabled  */
 	bool nat_keepalive;
@@ -353,8 +356,8 @@ struct whack_message {
 	 * 15 unused (was myid)
 	 * 16 ike
 	 * 17 esp
-	 * 18 left.username
-	 * 19 right.username
+	 * 18 left.xauth_username
+	 * 19 right.xauth_username
 	 * 20 connalias
 	 * 21 left.host_addr_name
 	 * 22 right.host_addr_name

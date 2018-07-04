@@ -2,9 +2,11 @@
 #include <stdlib.h>
 
 #include "lswlog.h"
+#include "lswtool.h"
 #include "lswalloc.h"
 #include "lswnss.h"
 #include "lswfips.h"
+#include "lswconf.h"
 
 #include "ike_alg.h"
 #include "alg_info.h"
@@ -287,11 +289,11 @@ static void test(void)
 	esp(pfs, "aes-sha1-modp8192,3des-sha1-modp8192"); /* silly */
 	esp(pfs, "aes-sha1-modp8192,aes-sha1-modp8192,aes-sha1-modp8192"); /* suppress duplicates */
 
-	esp(pfs && !fips && !ikev1, "aes;none");
+	esp(pfs && !ikev1, "aes;none");
 	esp(false, "aes;none,aes");
-	esp(pfs && !fips && !ikev1, "aes;none,aes;modp2048");
-	esp(pfs && !fips && !ikev1, "aes-sha1-none");
-	esp(pfs && !fips && !ikev1, "aes-sha1;none");
+	esp(pfs && !ikev1, "aes;none,aes;modp2048");
+	esp(pfs && !ikev1, "aes-sha1-none");
+	esp(pfs && !ikev1, "aes-sha1;none");
 
 	/*
 	 * should this be supported - for now man page says not
@@ -357,8 +359,8 @@ static void test(void)
 	ah(true, "sha2_384");
 	ah(true, "sha2_512");
 	ah(true, "aes_xcbc");
-	ah(pfs && !fips && !ikev1, "sha2-none");
-	ah(pfs && !fips && !ikev1, "sha2;none");
+	ah(pfs && !ikev1, "sha2-none");
+	ah(pfs && !ikev1, "sha2;none");
 	ah(pfs, "sha1-modp8192,sha1-modp8192,sha1-modp8192"); /* suppress duplicates */
 
 	/* AH tests that should fail */
@@ -408,9 +410,13 @@ static void usage(void)
 		"  -v1: only IKEv1 algorithms\n"
 		"  -v2: only IKEv2 algorithms\n"
 		"  -fips: put NSS in FIPS mode\n"
-		"  -v: more verbose\n"
-		"  -impair: disable all algorithm parser checks\n"
-		"  -t: run testsuite\n"
+		"  -v --verbose: more verbose\n"
+		"  -i --impair: disable all algorithm parser checks\n"
+		"  -d --debug: really verbose\n"
+		"  -tp: run proposal tests\n"
+		"  -ta: run algorithm tests\n"
+		"  -d -nssdir: directory containing crypto database\n"
+		"  -P -nsspw -password: password to unlock crypto database\n"
 		"  <protocol>: the protocol, one of 'ike', 'esp', or 'ah'\n"
 		"  <proposals>: a comma separated list of proposals to parse\n"
 		"For instance:\n"
@@ -464,12 +470,26 @@ int main(int argc, char *argv[])
 			lsw_set_fips_mode(LSW_FIPS_OFF);
 		} else if (streq(arg, "fips=unknown")) {
 			lsw_set_fips_mode(LSW_FIPS_UNKNOWN);
-		} else if (streq(arg, "v")) {
+		} else if (streq(arg, "v") || streq(arg, "verbose")) {
 			verbose = true;
 		} else if (streq(arg, "debug")) {
 			debug = true;
 		} else if (streq(arg, "impair")) {
 			impair = true;
+		} else if (streq(arg, "d") || streq(arg, "nssdir")) {
+			char *nssdir = *++argp;
+			if (nssdir == NULL) {
+				fprintf(stderr, "missing nss directory\n");
+				exit(1);
+			}
+			lsw_conf_nssdir(nssdir);
+		} else if (streq(arg, "P") || streq(arg, "nsspw") || streq(arg, "password")) {
+			char *nsspw = *++argp;
+			if (nsspw == NULL) {
+				fprintf(stderr, "missing nss password\n");
+				exit(1);
+			}
+			lsw_conf_nsspassword(nsspw);
 		} else {
 			fprintf(stderr, "unknown option: %s\n", *argp);
 			exit(1);
@@ -480,10 +500,17 @@ int main(int argc, char *argv[])
 
 	/*
 	 * Need to ensure that NSS is initialized before calling
-	 * ike_alg_init().  Some sanity checks require a working NSS.
+	 * ike_alg_init().  Sanity checks and algorithm testing
+	 * require a working NSS.
+	 *
+	 * When testing the algorithms in FIPS mode (i.e., executing
+	 * crypto code) NSS needs to be pointed at a real FIPS mode
+	 * NSS directory.
 	 */
 	lsw_nss_buf_t err;
-	if (!lsw_nss_setup(NULL, 0, NULL, err)) {
+	bool nss_ok = lsw_nss_setup((fips && test_algs) ? lsw_init_options()->nssdir : NULL,
+				    LSW_NSS_READONLY, lsw_nss_get_password, err);
+	if (!nss_ok) {
 		fprintf(stderr, "unexpected %s\n", err);
 		exit(1);
 	}

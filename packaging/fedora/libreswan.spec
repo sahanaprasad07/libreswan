@@ -39,13 +39,7 @@ Source1: https://download.libreswan.org/cavs/ikev1_dsa.fax.bz2
 Source2: https://download.libreswan.org/cavs/ikev1_psk.fax.bz2
 Source3: https://download.libreswan.org/cavs/ikev2.fax.bz2
 %endif
-BuildRequires: bison
-BuildRequires: flex
-BuildRequires: pkgconfig
-BuildRequires: systemd-devel
-Requires(post): bash
-Requires(post): coreutils
-Requires(post): systemd
+Requires(post): bash coreutils systemd
 Requires(preun): systemd
 Requires(postun): systemd
 
@@ -55,6 +49,8 @@ Provides: openswan = %{version}-%{release}
 Provides: openswan-doc = %{version}-%{release}
 
 BuildRequires: pkgconfig hostname
+BuildRequires: bison flex
+BuildRequires: systemd-devel
 BuildRequires: nss-devel >= 3.16.1
 BuildRequires: nspr-devel
 BuildRequires: pam-devel
@@ -77,6 +73,7 @@ BuildRequires: xmlto
 Requires: nss-tools
 Requires: nss-softokn
 Requires: iproute >= 2.6.8
+Requires: unbound-libs >= 1.6.6
 
 %description
 Libreswan is a free implementation of IPsec & IKE for Linux.  IPsec is
@@ -96,7 +93,15 @@ Libreswan is based on Openswan-2.6.38 which in turn is based on FreeS/WAN-2.04
 
 %prep
 %setup -q -n libreswan-%{version}%{?prever}
+# Fedora should really figure this versioning out itself, not burden upstream
 sed -i "s:/usr/bin/python:/usr/bin/python3:" programs/verify/verify.in
+sed -i "s:/usr/bin/python:/usr/bin/python3:" programs/show/show.in
+sed -i "s:/usr/bin/python:/usr/bin/python3:" testing/cert_verify/usage_test
+sed -i "s:/usr/bin/python:/usr/bin/python3:" testing/pluto/ikev1-01-fuzzer/cve-2015-3204.py
+sed -i "s:/usr/bin/python:/usr/bin/python3:" testing/pluto/ikev2-15-fuzzer/send_bad_packets.py
+sed -i "s:/usr/bin/python:/usr/bin/python3:" testing/x509/dist_certs.py
+# enable crypto-policies support
+sed -i "s:#[ ]*include \(.*\)\(/crypto-policies/back-ends/libreswan.config\)$:include \1\2:" programs/configs/ipsec.conf.in
 
 %build
 %if 0%{with_efence}
@@ -165,7 +170,7 @@ export NSS_DISABLE_HW_GCM=1
 %{buildroot}%{_libexecdir}/ipsec/cavp -v2 ikev2.fax | \
     diff -u ikev2.fax - > /dev/null
 : starting CAVS test for IKEv1 RSASIG
-%{buildroot}%{_libexecdir}/ipsec/cavp -v1sig ikev1_dsa.fax | \
+%{buildroot}%{_libexecdir}/ipsec/cavp -v1dsa ikev1_dsa.fax | \
     diff -u ikev1_dsa.fax - > /dev/null
 : starting CAVS test for IKEv1 PSK
 %{buildroot}%{_libexecdir}/ipsec/cavp -v1psk ikev1_psk.fax | \

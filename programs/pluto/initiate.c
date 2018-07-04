@@ -40,7 +40,6 @@
 
 #include <libreswan.h>
 #include "libreswan/pfkeyv2.h"
-#include "kameipsec.h"
 
 #include "sysdep.h"
 #include "constants.h"
@@ -752,7 +751,6 @@ static void initiate_ondemand_body(struct find_oppo_bundle *b
 			loggedit = TRUE;	/* loggedit not subsequently used */
 		}
 
-
 		ipsecdoi_initiate(b->whackfd, c, c->policy, 1,
 				  SOS_NOBODY, pcim_local_crypto
 #ifdef HAVE_LABELED_IPSEC
@@ -1232,8 +1230,7 @@ void connection_check_phase2(void)
 				if (c->dnshostname != NULL) {
 					restart_connections_by_peer(c);
 				} else {
-					delete_event(p1st);
-					event_schedule_s(EVENT_SA_REPLACE, 0, p1st);
+					event_force(EVENT_SA_REPLACE, p1st);
 				}
 			} else {
 				/* start a new connection. Something wanted it up */

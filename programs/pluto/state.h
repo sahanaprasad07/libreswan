@@ -37,6 +37,7 @@
 
 #include "deltatime.h"
 #include "monotime.h"
+#include "reqid.h"
 
 #include <nss.h>
 #include <pk11pub.h>
@@ -295,7 +296,7 @@ struct state {
 
 	bool st_ikev2;                          /* is this an IKEv2 state? */
 	bool st_ikev2_anon;                     /* is this an anonymous IKEv2 state? */
-	bool st_ikev2_no_del;                   /* suppress sending DELETE - eg replaced conn */
+	bool st_suppress_del_notify;            /* suppress sending DELETE - eg replaced conn */
 	bool st_rekeytov2;                      /* true if this IKEv1 is about
 						 * to be replaced with IKEv2
 						 */
@@ -576,7 +577,6 @@ struct state {
 	/*
 	 * Post-quantum preshared key variables
 	 */
-	char *st_ppk_dynamic_filename;		/* Filename containing dynamic PPKs */
 	bool st_ppk_used;			/* both ends agreed on PPK ID and PPK */
 	bool st_seen_ppk;			/* does remote peer support PPK? */
 
@@ -604,7 +604,7 @@ struct state {
 
 	struct hidden_variables hidden_variables;
 
-	char st_username[MAX_USERNAME_LEN];	/* NUL-terminated */
+	char st_xauth_username[MAX_XAUTH_USERNAME_LEN];	/* NUL-terminated */
 	chunk_t st_xauth_password;
 
 	monotime_t st_last_liveness;		/* Time of last v2 informational (0 means never?) */
@@ -657,7 +657,7 @@ struct state {
  *    struct child_sa *child; child->sa.st_...
  *
  * The function ike_sa() returns the IKE SA that the struct state
- * belongs to (an IKE SA belongs to its self).
+ * belongs to (an IKE SA belongs to itself).
  *
  * pexpect_ike_sa() is similar, except it complains loudly when ST
  * isn't an IKE SA.
@@ -752,7 +752,7 @@ extern void show_states_status(void);
 
 extern void ikev2_repl_est_ipsec(struct state *st, void *data);
 extern void ikev2_inherit_ipsec_sa(so_serial_t osn, so_serial_t nsn,
-		                const u_char *icookie,
+				const u_char *icookie,
 				const u_char *rcookie);
 
 void for_each_state(void (*f)(struct state *, void *data), void *data);
@@ -803,7 +803,7 @@ bool shared_phase1_connection(const struct connection *c);
 extern void record_deladdr(ip_address *ip, char *a_type);
 extern void record_newaddr(ip_address *ip, char *a_type);
 
-extern void append_st_cfg_domain(struct state *st, const char *dnsip);
+extern void append_st_cfg_domain(struct state *st, char *dnsip);
 extern void append_st_cfg_dns(struct state *st, const char *dnsip);
 extern bool ikev2_viable_parent(const struct ike_sa *ike);
 

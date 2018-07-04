@@ -114,7 +114,7 @@ static bool read_subnet(const char *src, size_t len,
 
 void free_virtual_ip(void)
 {
-       /* These might be NULL if empty in ipsec.conf */
+	/* These might be NULL if empty in ipsec.conf */
 	private_net_incl_len = 0;
 	pfreeany(private_net_incl);
 
@@ -237,7 +237,7 @@ struct virtual_t *create_virtual(const struct connection *c, const char *string)
 	/*
 	 * Parse string: fill flags & count subnets
 	 */
-	while (str != NULL && *str != '\0') {
+	while (*str != '\0') {
 		ip_subnet sub;	/* sink -- value never used */
 		ptrdiff_t len;
 		const char *next = strchr(str, ',');
@@ -266,7 +266,9 @@ struct virtual_t *create_virtual(const struct connection *c, const char *string)
 			return NULL;
 		}
 		/* clang 3.5 thinks that next might be NULL; wrong */
-		str = *next != '\0' ? next + 1 : NULL;
+		if (*next == '\0')
+			break;
+		str = next + 1;
 	}
 
 	v = (struct virtual_t *)alloc_bytes(

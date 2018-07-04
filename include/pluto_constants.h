@@ -22,6 +22,8 @@
  *
  */
 
+#include "lset.h"
+
 # ifndef DEFAULT_DNSSEC_ROOTKEY_FILE
 #  define DEFAULT_DNSSEC_ROOTKEY_FILE "<unused>"
 # endif
@@ -150,6 +152,7 @@ enum event_type {
 	EVENT_PENDING_DDNS,		/* try to start connections where DNS failed at init */
 	EVENT_SD_WATCHDOG,		/* update systemd's watchdog interval */
 	EVENT_PENDING_PHASE2,		/* do not make pending phase2 wait forever */
+	EVENT_CHECK_CRLS,		/* check/update CRLS */
 
 	/* events associated with states */
 
@@ -387,10 +390,9 @@ enum {
 	IMPAIR_BUST_MR2_IX,			/* make MR2 really large */
 	IMPAIR_DROP_I2_IX,			/* drop second initiator packet */
 	IMPAIR_SA_CREATION_IX,			/* fail all SA creation */
-	IMPAIR_DIE_ONINFO_IX,			/* cause state to be deleted upon receipt of information payload */
 	IMPAIR_JACOB_TWO_TWO_IX,		/* cause pluto to send all messages twice. */
 						/* cause pluto to send all messages twice. */
-	IMPAIR_ALLOW_NULL_NULL_IX,			/* cause pluto to allow esp=null-null and ah=null for testing */
+	IMPAIR_ALLOW_NULL_NONE_IX,		/* cause pluto to allow esp=null-none and ah=none for testing */
 	IMPAIR_MAJOR_VERSION_BUMP_IX,		/* cause pluto to send an IKE major version that's higher then we support. */
 	IMPAIR_MINOR_VERSION_BUMP_IX,		/* cause pluto to send an IKE minor version that's higher then we support. */
 
@@ -448,9 +450,8 @@ enum {
 #define IMPAIR_BUST_MR2	LELEM(IMPAIR_BUST_MR2_IX)
 #define IMPAIR_DROP_I2	LELEM(IMPAIR_DROP_I2_IX)
 #define IMPAIR_SA_CREATION	LELEM(IMPAIR_SA_CREATION_IX)
-#define IMPAIR_DIE_ONINFO	LELEM(IMPAIR_DIE_ONINFO_IX)
 #define IMPAIR_JACOB_TWO_TWO	LELEM(IMPAIR_JACOB_TWO_TWO_IX)
-#define IMPAIR_ALLOW_NULL_NULL	LELEM(IMPAIR_ALLOW_NULL_NULL_IX)
+#define IMPAIR_ALLOW_NULL_NONE		LELEM(IMPAIR_ALLOW_NULL_NONE_IX)
 #define IMPAIR_MAJOR_VERSION_BUMP	LELEM(IMPAIR_MAJOR_VERSION_BUMP_IX)
 #define IMPAIR_MINOR_VERSION_BUMP	LELEM(IMPAIR_MINOR_VERSION_BUMP_IX)
 
@@ -860,19 +861,19 @@ enum routing_t {
 #define shunt_erouted(rs) (erouted(rs) && (rs) != RT_ROUTED_TUNNEL)
 
 enum certpolicy {
-	cert_neversend   = 1,
-	cert_sendifasked = 2,   /* the default */
-	cert_alwayssend  = 3,
+	CERT_NEVERSEND   = 1,
+	CERT_SENDIFASKED = 2,   /* the default */
+	CERT_ALWAYSSEND  = 3,
 };
 
 /* this is the default setting. */
-#define cert_defaultcertpolicy cert_alwayssend
+#define cert_defaultcertpolicy CERT_ALWAYSSEND
 
 enum ikev1_natt_policy {
-	natt_both = 0, /* the default */
-	natt_rfc = 1,
-	natt_drafts = 2, /* Workaround for Cisco NAT-T bug */
-	natt_none = 3 /* Workaround for forcing non-encaps */
+	NATT_BOTH = 0, /* the default */
+	NATT_RFC = 1,
+	NATT_DRAFTS = 2, /* Workaround for Cisco NAT-T bug */
+	NATT_NONE = 3 /* Workaround for forcing non-encaps */
 };
 
 enum four_options {
@@ -882,34 +883,28 @@ enum four_options {
 	fo_insist  = 3          /* propose, and only accept if peer agrees */
 };
 
-enum esn_options {
-	esn_no = 1, /* default */
-	esn_yes = 2,
-	esn_either = 3,
-};
-
-enum encaps_options {
-	encaps_auto = 1, /* default */
-	encaps_no = 2,
-	encaps_yes = 3,
-};
-
-enum nic_offload_options {
-	nic_offload_no = 1,
-	nic_offload_yes = 2,
-	nic_offload_auto = 3,
-};
-
 enum ynf_options {
 	ynf_no   = 0,
 	ynf_yes  = 1,
 	ynf_force = 2,
 };
 
+enum yna_options {
+	yna_auto = 1, /* default */
+	yna_no = 2,
+	yna_yes = 3,
+};
+
+enum esn_options {
+	ESN_NO = 1, /* default */
+	ESN_YES = 2,
+	ESN_EITHER = 3,
+};
+
 enum saref_tracking {
-	sat_yes = 0,            /* SAref tracking via _updown - the default */
-	sat_no = 1,             /* no SAref tracking - third party will handle this */
-	sat_conntrack = 2,      /* Saref tracking using connmark optimizations */
+	SAT_YES = 0,            /* SAref tracking via _updown - the default */
+	SAT_NO = 1,             /* no SAref tracking - third party will handle this */
+	SAT_CONNTRACK = 2,      /* Saref tracking using connmark optimizations */
 };
 
 /* Policies for establishing an SA
@@ -1130,17 +1125,16 @@ enum keyword_host {
 };
 
 /*
- * reltated libunbound enumerated types
+ * related(???) libunbound enumerated types
  *
  * How authenticated is info that might have come from DNS?
  * In order of increasing confidence.
  */
 enum dns_auth_level {
-	DNSSEC_UNKNOWN,		/* didn't come from DNS like source */
-	DNSSEC_BOGUS,           /* UB returned BOGUS */
-	DNSSEC_INSECURE,        /* UB returned INSECURE */
-	PUBKEY_LOCAL,           /* came from local source, whack, plugin etc */
-	DNSSEC_SECURE,          /* UB returned SECURE */
+	/* 0 is reserved so uninitialized values are meaningless */
+	PUBKEY_LOCAL = 1,	/* came from local source, whack, plugin etc */
+	DNSSEC_INSECURE,	/* UB returned INSECURE */
+	DNSSEC_SECURE,		/* UB returned SECURE */
 
 	DNSSEC_ROOF
 };
@@ -1159,7 +1153,7 @@ enum PrivateKeyKind {
 };
 
 #define XAUTH_PROMPT_TRIES 3
-#define MAX_USERNAME_LEN 128
+#define MAX_XAUTH_USERNAME_LEN 128
 #define XAUTH_MAX_PASS_LENGTH 128
 
 #define MIN_LIVENESS 1
@@ -1183,13 +1177,15 @@ enum pluto_exit_code {
 extern void init_pluto_constants(void);
 
 /*
- * Automatic IPsec SA SPD policy priorities.
- * manual by user	0 - 65535
- * static conn		65536 - 131071
- * opportunistic	131072 - 262143
- * oe-anonymous		262144 - 524287
+ * IPsec SA SPD policy priorities.
+ * A smaller value is a higher priority.
+ * The bands we use must have 2<<19 distinct values.
+ * manual by user	[0 * 1<<19, 1 * 1<<19)
+ * static conn		[1 * 1<<19, 2 * 1<<19)
+ * opportunistic	[2 * 1<<19, 3 * 1<<19)
+ * oe-anonymous		[3 * 1<<19, 4 * 1<<19)
  */
-#define PLUTO_SPD_MANUAL_MAX 65535
-#define PLUTO_SPD_STATIC_MAX 131071
-#define PLUTO_SPD_OPPO_MAX 262143
-#define PLUTO_SPD_OPPO_ANON_MAX  524287
+#define PLUTO_SPD_MANUAL_MAX	(1u * (1u << 19) - 1u)	/* not yet used */
+#define PLUTO_SPD_STATIC_MAX	(2u * (1u << 19) - 1u)
+#define PLUTO_SPD_OPPO_MAX	(3u * (1u << 19) - 1u)
+#define PLUTO_SPD_OPPO_ANON_MAX	(4u * (1u << 19) - 1u)

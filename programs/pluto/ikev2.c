@@ -285,12 +285,12 @@ static /*const*/ struct state_v2_microcode v2_state_microcode_table[] = {
 	 * HDR, SAi1, N(REKEY_SA), {KEi,} Ni TSi TSr -->
 	 */
 	{ .story      = "Initiate CREATE_CHILD_SA IPsec Rekey SA",
-          .state      = STATE_V2_REKEY_CHILD_I0,
-          .next_state = STATE_V2_REKEY_CHILD_I,
-          .flags =      SMF2_IKE_I_CLEAR | SMF2_MSG_R_SET | SMF2_SEND,
-          .processor  = NULL,
-          .crypto_end = ikev2_child_out_cont,
-          .timeout_event = EVENT_v2_RETRANSMIT, },
+	  .state      = STATE_V2_REKEY_CHILD_I0,
+	  .next_state = STATE_V2_REKEY_CHILD_I,
+	  .flags =      SMF2_IKE_I_CLEAR | SMF2_MSG_R_SET | SMF2_SEND,
+	  .processor  = NULL,
+	  .crypto_end = ikev2_child_out_cont,
+	  .timeout_event = EVENT_v2_RETRANSMIT, },
 
 	/* no state:   --> CREATE IPsec Child Request
 	 * HDR, SAi1, {KEi,} Ni TSi TSr -->
@@ -311,7 +311,6 @@ static /*const*/ struct state_v2_microcode v2_state_microcode_table[] = {
 	  .next_state = STATE_PARENT_I1,
 	  .flags      = SMF2_IKE_I_CLEAR | SMF2_MSG_R_SET | SMF2_SEND,
 	  .processor  = NULL,
-	  .crypto_end = ikev2_parent_outI1_tail,
 	  .timeout_event = EVENT_v2_RETRANSMIT, },
 
 	/* STATE_PARENT_I1: R1B --> I1B
@@ -915,7 +914,7 @@ static void ikev2_log_payload_errors(struct state *st, struct msg_digest *md,
 		}
 	}
 
-	LSWLOG_LOG_WHACK(RC_LOG_SERIOUS, buf) {
+	LSWLOG_RC(RC_LOG_SERIOUS, buf) {
 		const enum isakmp_xchg_types ix = md->hdr.isa_xchg;
 		lswlogs(buf, "dropping unexpected ");
 		lswlog_enum_short(buf, &ikev2_exchange_names, ix);
@@ -1173,27 +1172,59 @@ static struct state *process_v2_child_ix(struct msg_digest *md,
 			st = NULL; /* in the previous message */
 	}
 
-        return st;
+	return st;
 }
 
-static bool process_recent_rtransmit(struct state *st,
-		const enum isakmp_xchg_types ix)
+/*
+ * If this looks like a re-transmit return true and, possibly,
+ * respond.
+ */
+
+static bool processed_retransmit(struct state *st,
+				 struct msg_digest *md,
+				 const enum isakmp_xchg_types ix)
 {
 	set_cur_state(st);
-	if (st->st_suspended_md != NULL) {
+
+	/*
+	 * XXX: This solution is broken. If two exchanges (after the
+	 * initial exchange) are interleaved, we ignore the first.
+	 * This is https://bugs.libreswan.org/show_bug.cgi?id=185
+	 *
+	 * Beware of unsigned arrithmetic.
+	 */
+	if (st->st_msgid_lastrecv != v2_INVALID_MSGID &&
+	    st->st_msgid_lastrecv > md->msgid_received) {
+		/* this is an OLD retransmit. we can't do anything */
+		libreswan_log("received too old retransmit: %u < %u",
+			      md->msgid_received,
+			      st->st_msgid_lastrecv);
+		return true;
+	}
+
+	if (st->st_msgid_lastrecv != md->msgid_received) {
+		/* presumably not a re-transmit */
+		return false;
+	}
+
+	/*
+	 * XXX: Necessary?  Only when the message IDs match should a
+	 * re-transmit occure - if they don't then the above should
+	 * have rejected the packet.
+	 */
+	if (state_is_busy(st)) {
 		libreswan_log("retransmission ignored: we're still working on the previous one");
-		return FALSE;
+		return true;
 	}
 
 	/* this should never happen */
-	if (st->st_tpacket.len == 0) {
-		pexpect(st->st_tpacket.len == 0); /* get noticed */
-		libreswan_log("retransmission for message ID: %u exchange %s failed lastreplued %u - we have no stored packet to retransmit",
-			st->st_msgid_lastrecv,
-			enum_name(&ikev2_exchange_names, ix),
-			st->st_msgid_lastreplied);
-		return FALSE;
-        }
+	if (st->st_tpacket.len == 0 && st->st_v2_tfrags == NULL) {
+		PEXPECT_LOG("retransmission for message ID: %u exchange %s failed lastreplied %u - we have no stored packet to retransmit",
+			    st->st_msgid_lastrecv,
+			    enum_name(&ikev2_exchange_names, ix),
+			    st->st_msgid_lastreplied);
+		return true;
+	}
 
 	if (st->st_msgid_lastreplied != st->st_msgid_lastrecv) {
 		LSWDBGP(DBG_CONTROLMORE|DBG_RETRANSMITS, buf) {
@@ -1204,17 +1235,44 @@ static bool process_recent_rtransmit(struct state *st,
 				st->st_msgid_lastreplied);
 		}
 		struct state *cst =  resp_state_with_msgid(st->st_serialno,
-				htonl(st->st_msgid_lastrecv));
-		if (cst == NULL)
-			return TRUE; /* process the re-transtmited message */
-
+							   htonl(st->st_msgid_lastrecv));
+		if (cst == NULL) {
+			/* XXX: why? */
+			return false; /* process the re-transtmited message */
+		}
 		LSWDBGP(DBG_CONTROLMORE|DBG_RETRANSMITS, buf) {
 			lswlog_retransmit_prefix(buf, st);
 			lswlogf(buf, "state #%lu %s is working on message ID: %u %s, retransmission ignored",
-					cst->st_serialno,
-					st->st_state_name,
-					st->st_msgid_lastrecv,
-					enum_name(&ikev2_exchange_names, ix));
+				cst->st_serialno,
+				st->st_state_name,
+				st->st_msgid_lastrecv,
+				enum_name(&ikev2_exchange_names, ix));
+		}
+		return true;
+	}
+
+	/*
+	 * XXX: IKEv1 saves the last received packet and compares.
+	 * Would doing that be doing that (and say only saving the
+	 * first fragment) be safer?
+	 */
+	if (md->hdr.isa_np == ISAKMP_NEXT_v2SKF) {
+		struct ikev2_skf skf;
+		pb_stream in_pbs = md->message_pbs; /* copy */
+		if (!in_struct(&skf, &ikev2_skf_desc, &in_pbs, NULL)) {
+			return true;
+		}
+		bool retransmit = skf.isaskf_number == 1;
+		LSWDBGP(DBG_CONTROLMORE|DBG_RETRANSMITS, buf) {
+			lswlog_retransmit_prefix(buf, st);
+			lswlogf(buf, "%s message ID %u exchange %s fragment %u",
+				retransmit ? "retransmitting response for" : "ignoring retransmit of",
+				st->st_msgid_lastrecv,
+				enum_name(&ikev2_exchange_names, ix),
+				skf.isaskf_number);
+		}
+		if (retransmit) {
+			send_recorded_v2_ike_msg(st, "ikev2-responder-retransmt (fragment 0)");
 		}
 	} else {
 		LSWDBGP(DBG_CONTROLMORE|DBG_RETRANSMITS, buf) {
@@ -1226,7 +1284,7 @@ static bool process_recent_rtransmit(struct state *st,
 		send_recorded_v2_ike_msg(st, "ikev2-responder-retransmit");
 	}
 
-	return FALSE;
+	return true;
 }
 
 /*
@@ -1281,7 +1339,7 @@ void ikev2_process_packet(struct msg_digest **mdp)
 	 * Find the state that the packet is sent to.
 	 *
 	 * The only time there isn't a state is when the responder
-	 * first sees an SA_INIT request (or its forgotten that it has
+	 * first sees an SA_INIT request (or it's forgotten that it has
 	 * seen it before).
 	 */
 
@@ -1405,27 +1463,9 @@ void ikev2_process_packet(struct msg_digest **mdp)
 						  ix, &ixb));
 			return;
 		}
-		/*
-		 * XXX: This solution is broken. If two exchanges
-		 * (after the initial exchange) are interleaved, we
-		 * ignore the first This is
-		 * https://bugs.libreswan.org/show_bug.cgi?id=185
-		 *
-		 * Beware of unsigned arrithmetic.
-		 */
-		if (st->st_msgid_lastrecv != v2_INVALID_MSGID &&
-		    st->st_msgid_lastrecv > md->msgid_received) {
-			/* this is an OLD retransmit. we can't do anything */
-			set_cur_state(st);
-			libreswan_log("received too old retransmit: %u < %u",
-				      md->msgid_received,
-				      st->st_msgid_lastrecv);
+		/* was this is a recent retransmit. */
+		if (processed_retransmit(st, md, ix)) {
 			return;
-		}
-		if (st->st_msgid_lastrecv == md->msgid_received) {
-			/* this is a recent retransmit. */
-			if (!process_recent_rtransmit(st, ix))
-				return;
 		}
 		/* update lastrecv later on */
 	} else if (md->message_role == MESSAGE_RESPONSE) {
@@ -1460,29 +1500,48 @@ void ikev2_process_packet(struct msg_digest **mdp)
 			 *
 			 * Beware of unsigned arrithmetic.
 			 */
-			if (is_msg_response(md)) {
-				/* Response to our request */
-				if (st->st_msgid_lastack != v2_INVALID_MSGID &&
-				    st->st_msgid_lastack > md->msgid_received) {
-					LSWDBGP(DBG_CONTROL|DBG_RETRANSMITS, buf) {
-						lswlog_retransmit_prefix(buf, st);
-						lswlogf(buf, "dropping retransmitted response with msgid %u from peer - we already processed %u.",
-							md->msgid_received, st->st_msgid_lastack);
-					}
-					return;
+			if (st->st_msgid_lastack != v2_INVALID_MSGID &&
+			    st->st_msgid_lastack > md->msgid_received) {
+				/*
+				 * An old response to our request?
+				 */
+				LSWDBGP(DBG_CONTROL|DBG_RETRANSMITS, buf) {
+					lswlog_retransmit_prefix(buf, st);
+					lswlogf(buf, "dropping retransmitted response with msgid %u from peer - we already processed %u.",
+						md->msgid_received, st->st_msgid_lastack);
 				}
-				if (st->st_msgid_nextuse != v2_INVALID_MSGID &&
-				    md->msgid_received >= st->st_msgid_nextuse) {
-					/*
-					 * A reply for an unknown request.  Huh!
-					 */
-					DBG(DBG_CONTROL, DBG_log(
-						    "dropping unasked response with msgid %u from peer (our last used msgid is %u)",
-						    md->msgid_received,
-						    st->st_msgid_nextuse - 1));
-					return;
-				}
+				return;
 			}
+			if (st->st_msgid_nextuse != v2_INVALID_MSGID &&
+			    md->msgid_received >= st->st_msgid_nextuse) {
+				/*
+				 * A reply for an unknown request (or
+				 * request we've not yet sent)? Huh!
+				 */
+				DBGF(DBG_CONTROL, "dropping unasked response with msgid %u from peer (our last used msgid is %u)",
+				     md->msgid_received,
+				     st->st_msgid_nextuse - 1);
+				return;
+			}
+			/*
+			 * Assume the request was generated by the IKE
+			 * SA, for instance:
+			 *
+ 			 * - as shown by ikev2-delete-02, the delete
+			 *   response
+			 *
+			 * - (in theory), when an AUTH exchange
+			 *   involves multiple messages (so the CHILD
+			 *   SA can't be created early), the AUTH
+			 *   response???
+			 *
+			 * - ???
+			 *
+			 * The log line lets find out.
+			 */
+			DBGF(DBG_CONTROL, "using IKE SA #%lu for response with msgid %u (nextuse: %u, lastack: %u)",
+			     st->st_serialno, md->msgid_received,
+			     st->st_msgid_nextuse, st->st_msgid_lastack);
 		}
 	} else {
 		PASSERT_FAIL("message role %d invalid", md->message_role);
@@ -1956,7 +2015,7 @@ void ikev2_process_state_packet(struct ike_sa *ike, struct state *st,
 
 bool ikev2_decode_peer_id_and_certs(struct msg_digest *md)
 {
-	bool initiator = md->hdr.isa_flags & ISAKMP_FLAGS_v2_MSG_R;
+	bool initiator = (md->hdr.isa_flags & ISAKMP_FLAGS_v2_MSG_R) != 0;
 	struct state *const st = md->st;
 	struct connection *c = md->st->st_connection;
 
@@ -2250,8 +2309,7 @@ static void sechdule_next_send(struct state *st)
 		p = st->send_next_ix;
 		cst = state_with_serialno(p->st_serialno);
 		if (cst != NULL) {
-			delete_event(cst);
-			event_schedule_s(EVENT_v2_SEND_NEXT_IKE, 0, cst);
+			event_force(EVENT_v2_SEND_NEXT_IKE, cst);
 			DBG(DBG_CONTROLMORE,
 				DBG_log("#%lu send next using parent #%lu next message id=%u, waiting to send %d",
 					cst->st_serialno, st->st_serialno,

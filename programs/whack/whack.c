@@ -41,6 +41,7 @@
 #include <arpa/inet.h>
 #include <getopt.h>
 #include <assert.h>
+#include <limits.h>	/* for INT_MAX */
 
 #include <libreswan.h>
 
@@ -74,7 +75,8 @@ static void help(void)
 		"	[--nexthop <ip-address>] \\\n"
 		"	[--client <subnet>] \\\n"
 		"	[--clientprotoport <protocol>/<port>] [--dnskeyondemand] \\\n"
-		"	[--ikeport <port-number>] [--srcip <ip-address>] [--vtiip <ip-address>/mask]\\\n"
+		"	[--ikeport <port-number>] [--srcip <ip-address>] \\\n"
+		"	[--vtiip <ip-address>/mask] \\\n"
 		"	[--updown <updown>] \\\n"
 		"	[--authby <psk | rsasig | null>] \\\n"
 		"	[--groups <access control groups>] \\\n"
@@ -85,8 +87,11 @@ static void help(void)
 		"	[--client <subnet> \\\n"
 		"	[--clientprotoport <protocol>/<port>] \\\n"
 		"	[--dnskeyondemand] [--updown <updown>] \\\n"
-		"	[--psk] | [--rsasig] | [--rsa-sha2] | [--rsa-sha2_256] | [--rsa-sha2_384 ] | [--rsa-sha2_512 ] | [ --auth-null] | [--auth-never] \\\n"
-		"	[--encrypt] [--authenticate] [--compress] [--sha2-truncbug] [--msdh-downgrade] \\\n"
+		"	[--psk] | [--rsasig] | [--rsa-sha2] | [--rsa-sha2_256] | \\\n"
+		"		[--rsa-sha2_384 ] | [--rsa-sha2_512 ] | [ --auth-null] | \\\n"
+		"		[--auth-never] \\\n"
+		"	[--encrypt] [--authenticate] [--compress] [--sha2-truncbug] \\\n"
+		"	[--msdh-downgrade] \\\n"
 		"	[--overlapip] [--tunnel] [--pfs] [--dns-match-id] \\\n"
 		"	[--pfsgroup modp1024 | modp1536 | modp2048 | \\\n"
 		"		modp3072 | modp4096 | modp6144 | modp8192 \\\n"
@@ -116,7 +121,7 @@ static void help(void)
 		"	[--dontrekey] [--aggressive] \\\n"
 		"	[--initialcontact] [--cisco-unity] [--fake-strongswan] \\\n"
 		"	[--encaps <auto|yes|no>] [--no-nat-keepalive] \\\n"
-		"	[--ikev1natt <both|rfc|drafts> \\\n"
+		"	[--ikev1-natt <both|rfc|drafts> \\\n"
 		"	[--dpddelay <seconds> --dpdtimeout <seconds>] \\\n"
 		"	[--dpdaction (clear|hold|restart)] \\\n"
 		"	[--xauthserver | --xauthclient] \\\n"
@@ -127,8 +132,9 @@ static void help(void)
 		"	[--modecfgbanner <login banner>] \\\n"
 		"	[--metric <metric>] \\\n"
 		"	[--nflog-group <groupnum>] \\\n"
-		"       [--conn-mark <mark/mask>] [--conn-mark-in <mark/mask>] [--conn-mark-out <mark/mask>] \\\n"
-		"       [--vti-iface <iface> ] [--vti-routing] [--vti-shared]\\\n"
+		"	[--conn-mark <mark/mask>] [--conn-mark-in <mark/mask>] \\\n"
+		"	[--conn-mark-out <mark/mask>] \\\n"
+		"	[--vti-iface <iface> ] [--vti-routing] [--vti-shared] \\\n"
 		"	[--initiateontraffic | --pass | --drop | --reject] \\\n"
 		"	[--failnone | --failpass | --faildrop | --failreject] \\\n"
 		"	[--negopass ] \\\n"
@@ -142,7 +148,8 @@ static void help(void)
 		"	[--username <name>] [--xauthpass <pass>]\n"
 		"\n"
 		"opportunistic initiation: whack [--tunnelipv4 | --tunnelipv6] \\\n"
-		"	--oppohere <ip-address> --oppothere <ip-address> [-oppotproto <protocol>]\n"
+		"	--oppohere <ip-address> --oppothere <ip-address> \\\n"
+		"	[-oppotproto <protocol>]\n"
 		"\n"
 		"delete: whack --delete --name <connection_name>\n"
 		"\n"
@@ -175,9 +182,10 @@ static void help(void)
 		"\n"
 		"purge: whack --purgeocsp\n"
 		"\n"
-		"reread: whack [--rereadsecrets] [--fetchcrls] [--rereadall] \\\n"
+		"reread: whack [--rereadsecrets] [--fetchcrls] [--rereadall]\n"
 		"\n"
-		"status: whack --status --trafficstatus --globalstatus --clearstats --shuntstatus --fipsstatus\n"
+		"status: whack [--status] | [--trafficstatus] | [--globalstatus] | \\\n"
+		"	[--clearstats] | [--shuntstatus] | [--fipsstatus]\n"
 		"\n"
 #ifdef HAVE_SECCOMP
 		"status: whack --seccomp-crashtest (CAREFUL!)\n"
@@ -628,7 +636,8 @@ static const struct option long_opts[] = {
 	{ "forceencaps", no_argument, NULL, CD_FORCEENCAPS + OO }, /* backwards compatibility */
 	{ "encaps", required_argument, NULL, CD_ENCAPS + OO },
 	{ "no-nat_keepalive", no_argument, NULL,  CD_NO_NAT_KEEPALIVE },
-	{ "ikev1_natt", required_argument, NULL, CD_IKEV1_NATT + OO },
+	{ "ikev1_natt", required_argument, NULL, CD_IKEV1_NATT + OO },	/* obsolete _ */
+	{ "ikev1-natt", required_argument, NULL, CD_IKEV1_NATT + OO },
 	{ "initialcontact", no_argument, NULL,  CD_INITIAL_CONTACT },
 	{ "cisco_unity", no_argument, NULL, CD_CISCO_UNITY },	/* obsolete _ */
 	{ "cisco-unity", no_argument, NULL, CD_CISCO_UNITY },
@@ -852,7 +861,7 @@ int main(int argc, char **argv)
 	/* space for at most one RSA key */
 	char keyspace[RSA_MAX_ENCODING_BYTES];
 
-	char username[MAX_USERNAME_LEN];
+	char xauthusername[MAX_XAUTH_USERNAME_LEN];
 	char xauthpass[XAUTH_MAX_PASS_LENGTH];
 	int usernamelen = 0;
 	int xauthpasslen = 0;
@@ -903,7 +912,7 @@ int main(int argc, char **argv)
 	msg.modecfg_dns = NULL;
 	msg.modecfg_banner = NULL;
 
-	msg.nic_offload = nic_offload_auto;
+	msg.nic_offload = yna_auto;
 	msg.sa_ike_life_seconds = deltatime(IKE_SA_LIFETIME_DEFAULT);
 	msg.sa_ipsec_life_seconds = deltatime(IPSEC_SA_LIFETIME_DEFAULT);
 	msg.sa_rekey_margin = deltatime(SA_REPLACEMENT_MARGIN_DEFAULT);
@@ -1189,7 +1198,7 @@ int main(int argc, char **argv)
 			}
 			continue;
 
-		/* --deleteuser  --name <username> */
+		/* --deleteuser --name <xauthusername> */
 		case OPT_DELETEUSER:
 			msg.whack_deleteuser = TRUE;
 			continue;
@@ -1414,12 +1423,12 @@ int main(int argc, char **argv)
 
 		case END_SENDCERT:
 			if (streq(optarg, "yes") || streq(optarg, "always")) {
-				msg.right.sendcert = cert_alwayssend;
+				msg.right.sendcert = CERT_ALWAYSSEND;
 			} else if (streq(optarg,
 					 "no") || streq(optarg, "never")) {
-				msg.right.sendcert = cert_neversend;
+				msg.right.sendcert = CERT_NEVERSEND;
 			} else if (streq(optarg, "ifasked")) {
-				msg.right.sendcert = cert_sendifasked;
+				msg.right.sendcert = CERT_SENDIFASKED;
 			} else {
 				diagq("whack sendcert value is not legal",
 				      optarg);
@@ -1691,27 +1700,27 @@ int main(int argc, char **argv)
 
 		/* backwards compatibility */
 		case CD_FORCEENCAPS:
-			msg.encaps = encaps_yes;
+			msg.encaps = yna_yes;
 			continue;
 
 		case CD_ENCAPS:
 			if (streq(optarg, "auto"))
-				msg.encaps = encaps_auto;
+				msg.encaps = yna_auto;
 			else if (streq(optarg, "yes"))
-				msg.encaps = encaps_yes;
+				msg.encaps = yna_yes;
 			else if (streq(optarg, "no"))
-				msg.encaps = encaps_no;
+				msg.encaps = yna_no;
 			else
 				diag("--encaps options are 'auto', 'yes' or 'no'");
 			continue;
 
 		case CD_NIC_OFFLOAD:  /* --nic-offload */
 			if (streq(optarg, "no"))
-				msg.nic_offload = nic_offload_no;
+				msg.nic_offload = yna_no;
 			else if (streq(optarg, "yes"))
-				msg.nic_offload = nic_offload_yes;
+				msg.nic_offload = yna_yes;
 			else if (streq(optarg, "auto"))
-				msg.nic_offload = nic_offload_auto;
+				msg.nic_offload = yna_auto;
 			else
 				diag("--nic-offload options are 'no', 'yes' or 'auto'");
 			continue;
@@ -1722,11 +1731,13 @@ int main(int argc, char **argv)
 
 		case CD_IKEV1_NATT:	/* --ikev1_natt */
 			if (streq(optarg, "both"))
-				msg.ikev1_natt = natt_both;
+				msg.ikev1_natt = NATT_BOTH;
 			else if (streq(optarg, "rfc"))
-				msg.ikev1_natt = natt_rfc;
+				msg.ikev1_natt = NATT_RFC;
 			else if (streq(optarg, "drafts"))
-				msg.ikev1_natt = natt_drafts;
+				msg.ikev1_natt = NATT_DRAFTS;
+			else if (streq(optarg, "none"))
+				msg.ikev1_natt = NATT_NONE;
 			else
 				diag("--ikev1-natt options are 'both', 'rfc' or 'drafts'");
 			continue;
@@ -1881,12 +1892,12 @@ int main(int argc, char **argv)
 			 * if this is going to be an conn definition, so do
 			 * both actions
 			 */
-			msg.right.username = optarg;
+			msg.right.xauth_username = optarg;
 			gotusername = TRUE;
 			/* ??? why does this length include NUL? */
-			usernamelen = jam_str(username, sizeof(username),
+			usernamelen = jam_str(xauthusername, sizeof(xauthusername),
 					optarg) -
-				username + 1;
+				xauthusername + 1;
 			continue;
 
 		case OPT_XAUTHPASS:
@@ -2467,11 +2478,11 @@ int main(int argc, char **argv)
 			case RC_USERPROMPT:
 				if (!gotusername) {
 					usernamelen = whack_get_value(
-						username,
-						sizeof(username));
+						xauthusername,
+						sizeof(xauthusername));
 				}
 				send_reply(sock,
-					   username,
+					   xauthusername,
 					   usernamelen);
 				break;
 

@@ -111,6 +111,11 @@ struct ikev2_transform {
 	 */
 	unsigned attr_keylen;
 	/*
+	 * Marker to indicate that the transform was implied rather
+	 * than valid.
+	 */
+	bool implied;
+	/*
 	 * Marker to indicate that the transform is valid.  The first
 	 * invalid transform acts as a sentinel.
 	 *
@@ -271,11 +276,6 @@ struct ikev2_proposals {
 	     (PROPNUM) < (BOUND) && (PROPNUM) < (PROPOSALS)->roof;	\
 	     (PROPNUM)++, (PROPOSAL)++)
 
-static void print_name_value(struct lswlog *log, const char *name, int value)
-{
-	lswlogf(log, "%s(%d)", name, value);
-}
-
 /*
  * Print <TRANSFORM> to the buffer.
  */
@@ -394,37 +394,6 @@ static void print_proposals(struct lswlog *buf, struct ikev2_proposals *proposal
 		lswlogs(buf, proposal_sep);
 		proposal_sep = " ";
 		print_proposal(buf, propnum, proposal);
-	}
-}
-
-void DBG_log_ikev2_proposals(const char *prefix,
-			     struct ikev2_proposals *proposals)
-{
-	DBG_log("%s ikev2_proposals:", prefix);
-	DBG_log("  allocation: %s", (proposals->on_heap ? "heap" : "static"));
-	passert(proposals->proposal[0].protoid == 0);
-	int propnum;
-	const struct ikev2_proposal *proposal;
-	FOR_EACH_PROPOSAL(propnum, proposal, proposals) {
-		if (proposal->propnum != 0) {
-			DBG_log("  proposal: %d (%d)", propnum, proposal->propnum);
-		} else {
-			DBG_log("  proposal: %d", propnum);
-		}
-		LSWLOG_DEBUG(buf) {
-			lswlogf(buf, "    ");
-			lswlogs(buf, "protoid=");
-			print_name_value(buf, protoid_name(proposal->protoid),
-					 proposal->protoid);
-		}
-		enum ikev2_trans_type type;
-		const struct ikev2_transforms *transforms;
-		FOR_EACH_TRANSFORMS_TYPE(type, transforms, proposal) {
-			LSWLOG_DEBUG(buf) {
-				lswlogf(buf, "    ");
-				print_type_transforms(buf, type, transforms);
-			}
-		}
 	}
 }
 
@@ -904,7 +873,7 @@ static int ikev2_process_proposals(pb_stream *sa_payload,
 	 * On loop exit, the result is one of:
 	 *
 	 *    -ve - the STF_FAIL status
-         *    0: no proposal matched
+	 *    0: no proposal matched
 	 *    [1..LOCAL_PROPOSALS->ROOF): best match so far
 	 */
 	int matching_local_propnum = 0;
@@ -1073,17 +1042,47 @@ static int ikev2_process_proposals(pb_stream *sa_payload,
 				.protoid = remote_proposal.isap_protoid,
 				.remote_spi = remote_spi,
 			};
+			/*
+			 * store the matching transforms in the very
+			 * first transform entry of BEST_TRANSFORMS
+			 */
 			enum ikev2_trans_type type;
 			struct ikev2_transforms *best_transforms;
+			struct ikev2_proposal_match *matching_local_proposal =
+				&matching_local_proposals[matching_local_propnum];
 			FOR_EACH_TRANSFORMS_TYPE(type, best_transforms, best_proposal) {
-				struct ikev2_transform *matching_transform = matching_local_proposals[matching_local_propnum].matching_transform[type];
+				struct ikev2_transform *matching_transform = matching_local_proposal->matching_transform[type];
 				passert(matching_transform != NULL);
-				/*
-				 * This includes invalid (or
-				 * unmatched) transform types which is
-				 * ok.
-				 */
-				*best_transforms->transform = *matching_transform;
+				if (!matching_transform->valid &&
+				    (matching_local_proposal->optional_transform_types & LELEM(type))) {
+					/*
+					 * DH=NONE and/or INTEG=NONE
+					 * is implied.
+					 */
+					unsigned id;
+					switch (type) {
+					case IKEv2_TRANS_TYPE_INTEG:
+						id = IKEv2_AUTH_NONE;
+						break;
+					case IKEv2_TRANS_TYPE_DH:
+						id = OAKLEY_GROUP_NONE;
+						break;
+					default:
+						bad_case(type);
+					}
+					best_transforms->transform[0] = (struct ikev2_transform) {
+						.id = id,
+						.valid = false,
+						.implied = true,
+					};
+				} else {
+					/*
+					 * When no match, this will
+					 * copy the sentinel transform
+					 * setting !valid.
+					 */
+					best_transforms->transform[0] = *matching_transform;
+				}
 			}
 		}
 	} while (remote_proposal.isap_lp == v2_PROPOSAL_NON_LAST);
@@ -1238,7 +1237,7 @@ static int walk_transforms(pb_stream *proposal_pbs, int nr_trans,
 			   unsigned propnum,
 			   bool exclude_transform_none)
 {
-	const char *what = proposal_pbs != NULL ? "payload" : "count";
+	const char *what = proposal_pbs != NULL ? "emitting proposal" : "counting transforms";
 	/*
 	 * Total up the number of transforms that will go across the
 	 * wire.  Make allowance for INTEGRITY which might be
@@ -1252,11 +1251,12 @@ static int walk_transforms(pb_stream *proposal_pbs, int nr_trans,
 		FOR_EACH_TRANSFORM(transform, transforms) {
 			/*
 			 * When pluto initiates with an AEAD proposal,
-			 * INTEG=NONE is excluded (as recommended by
-			 * the RFC).  However, when pluto receives an
-			 * AEAD proposal that includes integ=none, the
-			 * it needs to include it (as also recommended
-			 * by the RFC?).
+			 * INTEG=NONE is excluded by default (as
+			 * recommended by the RFC).  However, when
+			 * pluto receives an AEAD proposal that
+			 * includes INTEG=NONE, it needs to include it
+			 * (as also recommended by the RFC?) in the
+			 * reply.
 			 *
 			 * The impair options then screw with this
 			 * behaviour - including or excluding
@@ -1265,13 +1265,14 @@ static int walk_transforms(pb_stream *proposal_pbs, int nr_trans,
 			if (type == IKEv2_TRANS_TYPE_INTEG &&
 			    transform->id == IKEv2_AUTH_NONE) {
 				if (DBGP(IMPAIR_IKEv2_INCLUDE_INTEG_NONE)) {
-					libreswan_log("IMPAIR: for proposal %d include integ=none in %s",
+					libreswan_log("IMPAIR: proposal %d transform INTEG=NONE included when %s",
 						      propnum, what);
 				} else if (DBGP(IMPAIR_IKEv2_EXCLUDE_INTEG_NONE)) {
-					libreswan_log("IMPAIR: for proposal %d exclude integ=none in %s",
+					libreswan_log("IMPAIR: proposal %d transform INTEG=NONE excluded when %s",
 						      propnum, what);
 					continue;
 				} else if (exclude_transform_none) {
+					DBGF(DBG_CONTROL, "discarding INTEG=NONE");
 					continue;
 				}
 			}
@@ -1279,9 +1280,10 @@ static int walk_transforms(pb_stream *proposal_pbs, int nr_trans,
 			 * Since DH=NONE is omitted, don't include
 			 * it in the count.
 			 *
-			 * XXX: DH=NONE can only be excluded when it
-			 * is the only algorithm.  Fortunately that is
-			 * all that is supported.
+			 * XXX: This logic only works when there is a
+			 * single DH=NONE transform.  While DH=NONE +
+			 * DH=MODP2048 is valid the below doesn't
+			 * handle it.
 			 */
 			if (type == IKEv2_TRANS_TYPE_DH &&
 			    transform->id == OAKLEY_GROUP_NONE) {
@@ -1289,10 +1291,10 @@ static int walk_transforms(pb_stream *proposal_pbs, int nr_trans,
 				continue;
 #if 0
 				if (DBGP(IMPAIR_IKEv2_INCLUDE_DH_NONE)) {
-					libreswan_log("IMPAIR: for proposal %d include DH=NONE in %s",
+					libreswan_log("IMPAIR: proposal %d transform DH=NONE included when %s",
 						      propnum, what);
 				} else if (DBGP(IMPAIR_IKEv2_EXCLUDE_DH_NONE)) {
-					libreswan_log("IMPAIR: for proposal %d exclude DH=NONE in %s",
+					libreswan_log("IMPAIR: proposal %d transform DH=NONE excluded when %s",
 						      propnum, what);
 					continue;
 				} else if (exclude_transform_none) {
@@ -1433,9 +1435,13 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 	enum ikev2_trans_type type;
 	struct ikev2_transforms *transforms;
 	FOR_EACH_TRANSFORMS_TYPE(type, transforms, proposal) {
+		/*
+		 * Accepted transform is in [0] valid proposals would
+		 * be in [1...].
+		 */
 		pexpect(!transforms->transform[1].valid); /* zero or 1 */
-		if (transforms->transform[0].valid) {
-			struct ikev2_transform *transform = transforms->transform;
+		struct ikev2_transform *transform = &transforms->transform[0];
+		if (transform->valid || transform->implied) {
 			switch (type) {
 			case IKEv2_TRANS_TYPE_ENCR: {
 				const struct encrypt_desc *encrypt =
@@ -1531,14 +1537,6 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *proposal,
 				return FALSE;
 			}
 		}
-	}
-
-	/*
-	 * Patch up integrity.
-	 */
-	if (ike_alg_is_aead(ta.ta_encrypt) && ta.ta_integ == NULL) {
-		DBGF(DBG_CONTROL, "since AEAD, forcing NULL integ to 'NONE'");
-		ta.ta_integ = &ike_alg_integ_none;
 	}
 
 	*ta_out = ta;
@@ -1656,7 +1654,7 @@ static bool append_encrypt_transform(struct ikev2_proposal *proposal,
 	} else if (encrypt->keylen_omitted) {
 		/*
 		 * 3DES and NULL do not expect the key length
-		 * attribute - its redundant as there is only one
+		 * attribute - it's redundant as there is only one
 		 * valid key length.
 		 */
 		DBG(DBG_CONTROL, DBG_log("omitting IKEv2 %s %s ENCRYPT transform key-length",
@@ -1858,7 +1856,7 @@ static struct ikev2_proposal default_ikev2_ike_proposal[] = {
 			[IKEv2_TRANS_TYPE_DH] = TR(DH_MODP2048, DH_MODP3072, DH_MODP4096, DH_MODP8192, DH_ECP256),
 		},
 	},
-        /*
+	/*
 	 * AES_GCM_16/C[128]
 	 * NONE
 	 * SHA2_512, SHA2_256, SHA1 - SHA1 is MUST- in RFC 8247
@@ -1877,7 +1875,7 @@ static struct ikev2_proposal default_ikev2_ike_proposal[] = {
 			[IKEv2_TRANS_TYPE_DH] = TR(DH_MODP2048, DH_MODP3072, DH_MODP4096, DH_MODP8192, DH_ECP256),
 		},
 	},
-        /*
+	/*
 	 * AES_CBC[256]
 	 * SHA2_512, SHA2_256, SHA1 - SHA1 is MUST- in RFC 8247
 	 * SHA2_512, SHA2_256, SHA1
@@ -1896,7 +1894,7 @@ static struct ikev2_proposal default_ikev2_ike_proposal[] = {
 			[IKEv2_TRANS_TYPE_DH] = TR(DH_MODP2048, DH_MODP3072, DH_MODP4096, DH_MODP8192, DH_ECP256),
 		},
 	},
-        /*
+	/*
 	 * AES_CBC[128]
 	 * SHA2_512, SHA2_256, SHA1 - SHA1 is MUST- in RFC 8247
 	 * SHA2_512, SHA2_256, SHA1 - SHA1 is MUST- in RFC 8247

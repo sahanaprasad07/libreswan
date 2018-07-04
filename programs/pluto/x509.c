@@ -70,7 +70,6 @@
 #include "pluto_x509.h"
 #include "nss_cert_load.h"
 #include "nss_cert_verify.h"
-#include "nss_crl_import.h"
 #include "nss_err.h"
 
 /* NSS */
@@ -85,6 +84,7 @@
 #include <ocsp.h>
 #include "ike_alg_sha1.h"
 #include "crypt_hash.h"
+#include "crl_queue.h"
 
 bool crl_strict = FALSE;
 bool ocsp_strict = FALSE;
@@ -160,8 +160,8 @@ bool match_requested_ca(generalName_t *requested_ca, chunk_t our_ca,
 	return *our_pathlen <= MAX_CA_PATH_LEN;
 }
 
-static void convert_nss_gn_to_pluto_gn(CERTGeneralName *nss_gn,
-				generalName_t *pluto_gn)
+static void same_nss_gn_as_pluto_gn(CERTGeneralName *nss_gn,
+				    generalName_t *pluto_gn)
 {
 	switch (nss_gn->type) {
 	case certOtherName:
@@ -318,72 +318,11 @@ void select_nss_cert_id(CERTCertificate *cert, struct id *end_id)
 {
 	if (end_id->kind == ID_FROMCERT) {
 		DBG(DBG_X509,
-                    DBG_log("setting ID to ID_DER_ASN1_DN: \'%s\'", cert->subjectName));
+		    DBG_log("setting ID to ID_DER_ASN1_DN: \'%s\'", cert->subjectName));
 		end_id->name = same_secitem_as_chunk(cert->derSubject);
 		end_id->kind = ID_DER_ASN1_DN;
 	}
 
-}
-
-static char *make_crl_uri_str(chunk_t *uri)
-{
-	if (uri == NULL || uri->ptr == NULL || uri->len < 1)
-		return NULL;
-
-	char *uri_str = alloc_bytes(uri->len + 1, "uri str");
-
-	memcpy(uri_str, uri->ptr, uri->len);
-	uri_str[uri->len] = '\0';
-
-	return uri_str;
-}
-
-static void dbg_crl_import_err(int err)
-{
-	libreswan_log("NSS CRL import error: %s", nss_err_str((PRInt32)err));
-}
-
-bool insert_crl_nss(chunk_t *blob, chunk_t *crl_uri, char *nss_uri)
-{
-	bool ret;
-	char *uri_str;
-	int r;
-
-	if (blob == NULL || blob->ptr == NULL || blob->len < 1)
-		return FALSE;
-
-	/* for CRL use the name passed to helper for the uri */
-	if (nss_uri == NULL && crl_uri != NULL) {
-		uri_str = make_crl_uri_str(crl_uri);
-		if (uri_str == NULL) {
-			DBG(DBG_X509,
-			    DBG_log("no CRL URI available"));
-			return FALSE;
-		}
-	} else {
-		uri_str = nss_uri;
-	}
-
-	if (uri_str == NULL)
-		return FALSE;
-
-	r = send_crl_to_import(blob->ptr, blob->len, uri_str);
-	if (r == -1) {
-		libreswan_log("_import_crl internal error");
-		ret = FALSE;
-	} else if (r != 0) {
-		dbg_crl_import_err(r);
-		ret = FALSE;
-	} else {
-		DBG(DBG_X509, DBG_log("CRL imported"));
-		ret = TRUE;
-	}
-
-	if (nss_uri == NULL && crl_uri != NULL)
-		pfree(uri_str);
-
-	freeanychunk(*blob);
-	return ret;
 }
 
 generalName_t *gndp_from_nss_cert(CERTCertificate *cert)
@@ -425,12 +364,11 @@ generalName_t *gndp_from_nss_cert(CERTCertificate *cert)
 			first_name = name = point->distPoint.fullName;
 			do {
 				if (name->type == certURI) {
-					generalName_t *gndp;
-
 					/* Add single point to return list */
-					gndp = alloc_thing(generalName_t,
-							"converted gn");
-					convert_nss_gn_to_pluto_gn(name, gndp);
+					generalName_t *gndp =
+						alloc_thing(generalName_t,
+							    "gndp_from_nss_cert: general name");
+					same_nss_gn_as_pluto_gn(name, gndp);
 					gndp->next = gndp_list;
 					gndp_list = gndp;
 				}
@@ -532,11 +470,12 @@ static void get_pluto_gn_from_nss_cert(CERTCertificate *cert, generalName_t **gn
 		CERTGeneralName *cur_nss_gn = first_nss_gn;
 
 		do {
-			generalName_t *pluto_gn = alloc_thing(generalName_t, "converted gn");
-
+			generalName_t *pluto_gn =
+				alloc_thing(generalName_t,
+					    "get_pluto_gn_from_nss_cert: converted gn");
 			DBG(DBG_X509, DBG_log("%s: allocated pluto_gn %p",
 						__FUNCTION__, pluto_gn));
-			convert_nss_gn_to_pluto_gn(cur_nss_gn, pluto_gn);
+			same_nss_gn_as_pluto_gn(cur_nss_gn, pluto_gn);
 			pluto_gn->next = pgn_list;
 			pgn_list = pluto_gn;
 			/*
@@ -886,9 +825,10 @@ static lsw_cert_ret pluto_process_certs(struct state *st,
 			end_cert_dp = gndp_from_nss_cert(end_cert);
 		}
 		if (find_fetch_dn(&fdn, c, end_cert)) {
-			add_crl_fetch_request_nss(&fdn, end_cert_dp);
-			wake_fetch_thread(__FUNCTION__);
+			add_crl_fetch_requests(crl_fetch_request(&fdn, end_cert_dp, NULL));
 		}
+		DBGF(DBG_X509, "releasing end_cert_dp sent to crl fetch");
+		free_generalNames(end_cert_dp, false/*shallow*/);
 	}
 #endif
 
@@ -1297,34 +1237,26 @@ bool ikev2_send_cert_decision(struct state *st)
 
 	DBG(DBG_X509, DBG_log("IKEv2 CERT: send a certificate?"));
 
-	if (st->st_peer_wants_null)
-		return FALSE;
-
-	if (!(c->policy & POLICY_RSASIG)) {
+	if (st->st_peer_wants_null) {
+	} else if (!(c->policy & POLICY_RSASIG)) {
 		DBG(DBG_X509,
 			DBG_log("IKEv2 CERT: policy does not have RSASIG: %s",
 				prettypolicy(c->policy & POLICY_ID_AUTH_MASK)));
-		return FALSE;
-	}
-
-	if (cert.ty == CERT_NONE || cert.u.nss_cert == NULL) {
+	} else if (cert.ty == CERT_NONE || cert.u.nss_cert == NULL) {
 		DBG(DBG_X509,
 			DBG_log("IKEv2 CERT: no certificate to send"));
-		return FALSE;
-	}
-
-	if ((c->spd.this.sendcert != cert_sendifasked ||
-	      !st->hidden_variables.st_got_certrequest) &&
-			c->spd.this.sendcert != cert_alwayssend)
+	} else if ((c->spd.this.sendcert == CERT_SENDIFASKED &&
+	     st->hidden_variables.st_got_certrequest) ||
+	    c->spd.this.sendcert == CERT_ALWAYSSEND)
 	{
+		DBG(DBG_X509, DBG_log("IKEv2 CERT: OK to send a certificate"));
+
+		return TRUE;
+	} else {
 		DBG(DBG_X509,
 			DBG_log("IKEv2 CERT: no cert requested or told not to send"));
-		return FALSE;
 	}
-
-	DBG(DBG_X509, DBG_log("IKEv2 CERT: OK to send a certificate"));
-
-	return TRUE;
+	return FALSE;
 }
 
 stf_status ikev2_send_certreq(struct state *st, struct msg_digest *md,
@@ -1708,17 +1640,17 @@ static void crl_detail_list(void)
 	if (SEC_LookupCrls(handle, &crl_list, SEC_CRL_TYPE) != SECSuccess)
 		return;
 
-	CERTCrlNode *crl_node = crl_list->first;
-
-	while (crl_node != NULL) {
-		if (crl_node->crl != NULL)
+	for (CERTCrlNode *crl_node = crl_list->first; crl_node != NULL;
+	     crl_node = crl_node->next) {
+		if (crl_node->crl != NULL) {
 			crl_detail_to_whacklog(&crl_node->crl->crl);
-
-		crl_node = crl_node->next;
+		}
 	}
+	DBGF(DBG_X509, "releasing crl list in %s", __func__);
+	PORT_FreeArena(crl_list->arena, PR_FALSE);
 }
 
-static CERTCertList *get_all_certificates()
+CERTCertList *get_all_certificates(void)
 {
 	PK11SlotInfo *slot = PK11_GetInternalKeySlot();
 
@@ -1768,79 +1700,6 @@ static void cert_detail_list(show_cert_t type)
 
 	CERT_DestroyCertList(certs);
 }
-
-#if defined(LIBCURL) || defined(LIBLDAP)
-void check_crls(void)
-{
-	/*
-	 * CERT_GetDefaultCertDB() simply returns the contents of a
-	 * static variable set by NSS_Initialize().  It doesn't check
-	 * the value and doesn't set PR error.  Short of calling
-	 * CERT_SetDefaultCertDB(NULL), the value can never be NULL.
-	 */
-	CERTCertDBHandle *handle = CERT_GetDefaultCertDB();
-	passert(handle != NULL);
-
-	CERTCrlHeadNode *crl_list = NULL;
-
-	if (SEC_LookupCrls(handle, &crl_list, SEC_CRL_TYPE) != SECSuccess)
-		return;
-
-	CERTCrlNode *crl_node = crl_list->first;
-
-	while (crl_node != NULL) {
-		if (crl_node->crl != NULL) {
-			SECItem *issuer = &crl_node->crl->crl.derName;
-
-			if (crl_node->crl->url == NULL) {
-				add_crl_fetch_request_nss(issuer, NULL);
-			} else {
-				generalName_t end_dp = {
-					.kind = GN_URI,
-					.name = {
-						.ptr = (u_char *)crl_node->crl->url,
-						.len = strlen(crl_node->crl->url)
-					},
-					.next = NULL
-				};
-				add_crl_fetch_request_nss(issuer, &end_dp);
-			}
-		}
-		crl_node = crl_node->next;
-	}
-
-	/* add the pubkeys distribution points to fetch list */
-
-	struct pubkey_list *pubkeys = pluto_pubkeys;
-	struct pubkey *key;
-
-	while (pubkeys != NULL) {
-		key = pubkeys->key;
-		if (key != NULL) {
-			SECItem issuer = same_chunk_as_dercert_secitem(key->issuer);
-			add_crl_fetch_request_nss(&issuer, NULL);
-		}
-		pubkeys = pubkeys->next;
-	}
-
-	/*
-	 * Iterate all X.509 certificates in database. This is needed to
-	 * process middle and end certificates.
-	 */
-	CERTCertList *certs = get_all_certificates();
-
-	if (certs != NULL) {
-		CERTCertListNode *node;
-
-		for (node = CERT_LIST_HEAD(certs);
-		     !CERT_LIST_END(node, certs);
-		     node = CERT_LIST_NEXT(node))
-			add_crl_fetch_request_nss(&node->cert->derSubject,
-						NULL);
-		CERT_DestroyCertList(certs);
-	}
-}
-#endif
 
 void list_crls(void)
 {

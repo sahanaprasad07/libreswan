@@ -81,7 +81,7 @@
 
 bool nat_traversal_enabled = TRUE; /* can get disabled if kernel lacks support */
 
-static deltatime_t nat_kap = DELTATIME(DEFAULT_KEEP_ALIVE_PERIOD);	/* keep-alive period */
+static deltatime_t nat_kap = DELTATIME_INIT(DEFAULT_KEEP_ALIVE_PERIOD);	/* keep-alive period */
 static bool nat_kap_event = FALSE;
 
 #define IKEV2_NATD_HASH_SIZE	SHA1_DIGEST_SIZE
@@ -198,7 +198,7 @@ bool ikev2_out_nat_v2n(u_int8_t np, pb_stream *outs, struct msg_digest *md)
 	u_int16_t lport = st->st_localport;
 
 	/* if encapsulation=yes, force NAT-T detection by using wrong port for hash calc */
-	if (st->st_connection->encaps == encaps_yes) {
+	if (st->st_connection->encaps == yna_yes) {
 		DBG(DBG_NATT, DBG_log("NAT-T: encapsulation=yes, so mangling hash to force NAT-T detection"));
 		lport = 0;
 	}
@@ -265,20 +265,18 @@ bool nat_traversal_insert_vid(u_int8_t np, pb_stream *outs, const struct state *
 	 * when they see NATT payloads.
 	 */
 	switch (st->st_connection->ikev1_natt) {
-	case natt_rfc:
+	case NATT_RFC:
 		DBG(DBG_NATT, DBG_log("skipping VID_NATT drafts"));
 		if (!out_vid(np, outs, VID_NATT_RFC))
 			return FALSE;
 		break;
-	case natt_both:
+	case NATT_BOTH:
 		DBG(DBG_NATT, DBG_log("sending draft and RFC NATT VIDs"));
 		if (!out_vid(ISAKMP_NEXT_VID, outs, VID_NATT_RFC))
 			return FALSE;
 		/* FALL THROUGH */
-	case natt_drafts:
-		if (st->st_connection->ikev1_natt == natt_drafts) {
-			DBG(DBG_NATT, DBG_log("skipping VID_NATT_RFC"));
-		}
+	case NATT_DRAFTS:
+		DBG(DBG_NATT, DBG_log("skipping VID_NATT_RFC"));
 		if (!out_vid(ISAKMP_NEXT_VID, outs, VID_NATT_IETF_03))
 			return FALSE;
 		if (!out_vid(ISAKMP_NEXT_VID, outs, VID_NATT_IETF_02_N))
@@ -286,7 +284,7 @@ bool nat_traversal_insert_vid(u_int8_t np, pb_stream *outs, const struct state *
 		if (!out_vid(np, outs, VID_NATT_IETF_02))
 			return FALSE;
 		break;
-	case natt_none:
+	case NATT_NONE:
 		/* This should never be reached, but makes compiler happy */
 		DBG(DBG_NATT, DBG_log("not sending any NATT VID's"));
 		break;
@@ -350,7 +348,7 @@ static void natd_lookup_common(struct state *st,
 
 	/* update NAT-T settings for local policy */
 	switch (st->st_connection->encaps) {
-	case encaps_auto:
+	case yna_auto:
 		DBG(DBG_NATT, DBG_log("NAT_TRAVERSAL encaps using auto-detect"));
 		if (!found_me) {
 			DBG(DBG_NATT, DBG_log("NAT_TRAVERSAL this end is behind NAT"));
@@ -373,12 +371,12 @@ static void natd_lookup_common(struct state *st,
 		}
 		break;
 
-	case encaps_no:
+	case yna_no:
 		st->hidden_variables.st_nat_traversal |= LEMPTY;
 		DBG(DBG_NATT, DBG_log("NAT_TRAVERSAL local policy prohibits encapsulation"));
 		break;
 
-	case encaps_yes:
+	case yna_yes:
 		DBG(DBG_NATT, DBG_log("NAT_TRAVERSAL local policy enforces encapsulation"));
 
 		DBG(DBG_NATT, DBG_log("NAT_TRAVERSAL forceencaps enabled"));
@@ -502,7 +500,7 @@ bool ikev1_nat_traversal_add_natd(u_int8_t np, pb_stream *outs,
 		secondport = p;
 	}
 
-	if (st->st_connection->encaps == encaps_yes) {
+	if (st->st_connection->encaps == yna_yes) {
 		DBG(DBG_NATT,
 			DBG_log("NAT-T: encapsulation=yes, so mangling hash to force NAT-T detection"));
 		firstport = secondport = 0;
@@ -992,7 +990,7 @@ static void nat_traversal_find_new_mapp_state(struct state *st, void *data)
 	}
 }
 
-static int nat_traversal_new_mapping(struct state *st,
+static void nat_traversal_new_mapping(struct state *st,
 				const ip_address *nsrc,
 				u_int16_t nsrcport)
 {
@@ -1011,8 +1009,6 @@ static int nat_traversal_new_mapping(struct state *st,
 	nfo.port  = nsrcport;
 
 	for_each_state(nat_traversal_find_new_mapp_state, &nfo);
-
-	return 0;
 }
 
 /* this should only be called after packet has been verified/authenticated! */
@@ -1029,8 +1025,7 @@ void nat_traversal_change_port_lookup(struct msg_digest *md, struct state *st)
 		 * states and established kernel SA)
 		 */
 		if (st->st_remoteport != hportof(&md->sender) ||
-			!sameaddr(&st->st_remoteaddr, &md->sender)) {
-
+		    !sameaddr(&st->st_remoteaddr, &md->sender)) {
 			nat_traversal_new_mapping(st, &md->sender,
 						hportof(&md->sender));
 		}
@@ -1108,13 +1103,13 @@ struct new_klips_mapp_nfo {
 
 static void nat_t_new_klips_mapp(struct state *st, void *data)
 {
-	struct connection *c = st->st_connection;
 	struct new_klips_mapp_nfo *nfo = (struct new_klips_mapp_nfo *)data;
 
-	if (c != NULL && st->st_esp.present &&
+	if (st->st_esp.present &&
 	    sameaddr(&st->st_remoteaddr, &nfo->src) &&
-	    st->st_esp.our_spi == nfo->sa->sadb_sa_spi)
+	    st->st_esp.our_spi == nfo->sa->sadb_sa_spi) {
 		nat_traversal_new_mapping(st, &nfo->dst, nfo->dport);
+	}
 }
 
 void process_pfkey_nat_t_new_mapping(

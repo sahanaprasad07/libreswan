@@ -382,7 +382,7 @@ void ipsec_print_ip(void *ip)
  *  2) How does this affect syncookies, mss_cache, dst cache ?
  *  3) Path MTU discovery handling needs to be reviewed.  For example,
  *     if we receive an ICMP 'packet too big' message from an intermediate
- *     router specifying it's next hop MTU, our stack may process this and
+ *     router specifying its next hop MTU, our stack may process this and
  *     adjust the MSS without taking our AH/ESP overheads into account.
  */
 
@@ -1482,12 +1482,12 @@ static int create_hold_eroute(struct ipsec_xmit_state *ixs)
 	if (lsw_ip_hdr_version(ixs) == 6) {
 		struct in6_addr addr6_any = IN6ADDR_ANY_INIT;
 		hold_said.dst.u.v6.sin6_addr = addr6_any;
-		hold_said.dst.u.v6.sin6_family = AF_INET6;
+		SET_V6(hold_said.dst);
 	} else
 #endif
 	{
 		hold_said.dst.u.v4.sin_addr.s_addr = INADDR_ANY;
-		hold_said.dst.u.v4.sin_family = AF_INET;
+		SET_V4(hold_said.dst);
 	}
 
 	hold_eroute.er_eaddr.sen_len = sizeof(struct sockaddr_encap);
@@ -1764,6 +1764,10 @@ enum ipsec_xmit_value ipsec_xmit_init1(struct ipsec_xmit_state *ixs)
 				memset(&dst, 0, sizeof(dst));
 				src.sin6_family = AF_INET6;
 				dst.sin6_family = AF_INET6;
+#ifdef NEED_SIN_LEN
+				src.sin6_len = sizeof(struct sockaddr_in6);
+				dst.sin6_len = sizeof(struct sockaddr_in6);
+#endif
 				src.sin6_addr = lsw_ip6_hdr(ixs)->saddr;
 				dst.sin6_addr = lsw_ip6_hdr(ixs)->daddr;
 
@@ -1905,6 +1909,10 @@ enum ipsec_xmit_value ipsec_xmit_init1(struct ipsec_xmit_state *ixs)
 				memset(&dst, 0, sizeof(dst));
 				src.sin_family = AF_INET;
 				dst.sin_family = AF_INET;
+#ifdef NEED_SIN_LEN
+				src.sin_len = sizeof(struct sockaddr_in);
+				dst.sin_len = sizeof(struct sockaddr_in);
+#endif
 				src.sin_addr.s_addr = lsw_ip4_hdr(ixs)->saddr;
 				dst.sin_addr.s_addr = lsw_ip4_hdr(ixs)->daddr;
 

@@ -25,7 +25,9 @@
 #define _CONSTANTS_H_
 
 #include <stddef.h> /* for size_t */
+
 #include "shunk.h"
+#include "lset.h"
 
 struct lswlog;
 
@@ -82,15 +84,6 @@ struct lswlog;
 
 #define PMIN(x,y) ((x) <= (y) ? (x) : (y))
 #define PMAX(x,y) ((x) >= (y) ? (x) : (y))
-
-/* Many routines return only success or failure, but wish to describe
- * the failure in a message.  We use the convention that they return
- * a NULL on success and a pointer to constant string on failure.
- * The fact that the string is a constant is limiting, but it
- * avoids storage management issues: the recipient is allowed to assume
- * that the string will live "long enough" (usually forever).
- * <libreswan.h> defines err_t for this return type.
- */
 
 /*
  * Libreswan was written before <stdbool.h> was standardized.
@@ -183,24 +176,6 @@ extern const char *bool_str(bool b);	/* bool -> string */
 /* routines to copy C strings to fixed-length buffers */
 extern char *jam_str(char *dest, size_t size, const char *src);
 extern char *add_str(char *buf, size_t size, char *hint, const char *src);
-
-/* set type with room for at least 64 elements for ALG opts
- * (was 32 in stock FS)
- */
-
-typedef uint_fast64_t lset_t;
-#define PRIxLSET    PRIxFAST64
-#define LELEM_ROOF  64	/* all elements must be less than this */
-#define LEMPTY ((lset_t)0)
-#define LELEM(opt) ((lset_t)1 << (opt))
-#define LRANGE(lwb, upb) LRANGES(LELEM(lwb), LELEM(upb))
-#define LRANGES(first, last) (last - first + last)
-#define LHAS(set, elem)  (((set) & LELEM(elem)) != LEMPTY)
-#define LIN(subset, set)  (((subset) & (set)) == (subset))
-#define LDISJOINT(a, b)  (((a) & (b)) == LEMPTY)
-/* LFIRST: find first element of a set (tricky use of twos complement) */
-#define LFIRST(s) ((s) & -(s))
-#define LSINGLETON(s) ((s) != LEMPTY && LFIRST(s) == (s))
 
 /* Routines to check and display values.
  *
@@ -350,8 +325,6 @@ struct keyword_enum_values {
 	const struct keyword_enum_value *values;
 	size_t valuesize;
 };
-
-extern struct keyword_enum_values kw_host_list;
 
 extern const char *keyword_name(struct keyword_enum_values *kevs,
 				unsigned int value);

@@ -212,8 +212,8 @@ void ipsecdoi_initiate(int whack_sock,
 		       )
 {
 	/*
-         * If there's already an IKEv1 ISAKMP SA established, use that and
-         * go directly to Quick Mode.  We are even willing to use one
+	 * If there's already an IKEv1 ISAKMP SA established, use that and
+	 * go directly to Quick Mode.  We are even willing to use one
 	 * that is still being negotiated, but only if we are the Initiator
 	 * (thus we can be sure that the IDs are not going to change;
 	 * other issues around intent might matter).
@@ -287,46 +287,42 @@ void ipsecdoi_initiate(int whack_sock,
  * - duplicate whack fd, if live.
  * Does not delete the old state -- someone else will do that.
  */
-void ipsecdoi_replace(struct state *st,
-		      lset_t policy_add, lset_t policy_del,
-		      unsigned long try)
+void ipsecdoi_replace(struct state *st, unsigned long try)
 {
-	initiator_function *initiator;
-	int whack_sock = dup_any(st->st_whack_sock);
-	lset_t policy = st->st_policy;
-
 	if (IS_PARENT_SA_ESTABLISHED(st) &&
-			!LIN(POLICY_REAUTH, st->st_connection->policy) &&
-			ikev2_rekey_ike_start(st)) {
+	    !LIN(POLICY_REAUTH, st->st_connection->policy)) {
 		libreswan_log("initiate rekey of IKEv2 CREATE_CHILD_SA IKE Rekey");
+		/* ??? why does this not need whack socket fd? */
+		ikev2_rekey_ike_start(st);
 	} else if (IS_IKE_SA(st)) {
-		if (IS_PARENT_SA_ESTABLISHED(st) &&
-				LIN(POLICY_REAUTH, st->st_connection->policy)) {
-			libreswan_log("initiate reauthentication of IKE SA");
-		}
-		struct connection *c = st->st_connection;
-		policy = (c->policy & ~POLICY_IPSEC_MASK &
-				~policy_del) | policy_add;
+		/* start from policy in connection */
 
-		initiator = pick_initiator(c, policy);
-		passert(!HAS_IPSEC_POLICY(policy));
+		struct connection *c = st->st_connection;
+
+		lset_t policy = c->policy & ~POLICY_IPSEC_MASK;
+
+		if (IS_PARENT_SA_ESTABLISHED(st))
+			libreswan_log("initiate reauthentication of IKE SA");
+
+		initiator_function *initiator = pick_initiator(c, policy);
+
 		if (initiator != NULL) {
-			(void) initiator(whack_sock, st->st_connection,
-					st, policy,
-					try, st->st_import
+			(void) initiator(dup_any(st->st_whack_sock),
+				c, st, policy, try, st->st_import
 #ifdef HAVE_LABELED_IPSEC
-					, st->sec_ctx
+				, st->sec_ctx
 #endif
-					);
-		} else {
-			/* fizzle: whack_sock will be unused */
-			close_any(whack_sock);
+				);
 		}
 	} else {
-		/* Add features of actual old state to policy.  This ensures
-		 * that rekeying doesn't downgrade security.  I admit that
-		 * this doesn't capture everything.
+		/*
+		 * Start from policy in (ipsec) state, not connection.
+		 * This ensures that rekeying doesn't downgrade
+		 * security.  I admit that this doesn't capture
+		 * everything.
 		 */
+		lset_t policy = st->st_policy;
+
 		if (st->st_pfs_group != NULL)
 			policy |= POLICY_PFS;
 		if (st->st_ah.present) {
@@ -351,12 +347,12 @@ void ipsecdoi_replace(struct state *st,
 
 		if (!st->st_ikev2)
 			passert(HAS_IPSEC_POLICY(policy));
-		ipsecdoi_initiate(whack_sock, st->st_connection, policy, try,
-				  st->st_serialno, st->st_import
+		ipsecdoi_initiate(dup_any(st->st_whack_sock), st->st_connection,
+			policy, try, st->st_serialno, st->st_import
 #ifdef HAVE_LABELED_IPSEC
-				  , st->sec_ctx
+			, st->sec_ctx
 #endif
-				  );
+			);
 	}
 }
 
@@ -502,8 +498,8 @@ void initialize_new_state(struct state *st,
 
 	for (sr = &c->spd; sr != NULL; sr = sr->spd_next) {
 		if (sr->this.xauth_client) {
-			if (sr->this.username != NULL) {
-				jam_str(st->st_username, sizeof(st->st_username), sr->this.username);
+			if (sr->this.xauth_username != NULL) {
+				jam_str(st->st_xauth_username, sizeof(st->st_xauth_username), sr->this.xauth_username);
 				break;
 			}
 		}
@@ -555,7 +551,7 @@ void fmt_ipsec_sa_established(struct state *st, char *sadetails, size_t sad_len)
 	}
 
 	if (st->st_esp.present) {
-		bool nat = st->hidden_variables.st_nat_traversal & NAT_T_DETECTED;
+		bool nat = (st->hidden_variables.st_nat_traversal & NAT_T_DETECTED) != 0;
 		bool tfc = c->sa_tfcpad != 0 && !st->st_seen_no_tfc;
 		bool esn = st->st_esp.attrs.transattrs.esn_enabled;
 
@@ -564,8 +560,8 @@ void fmt_ipsec_sa_established(struct state *st, char *sadetails, size_t sad_len)
 				    c->spd.that.host_port));
 
 		DBG(DBG_NATT, DBG_log("NAT-T: encaps is '%s'",
-			    c->encaps == encaps_auto ? "auto" :
-				bool_str(c->encaps == encaps_yes)));
+			    c->encaps == yna_auto ? "auto" :
+				bool_str(c->encaps == yna_yes)));
 
 		snprintf(b, sad_len - (b - sadetails),
 			 "%sESP%s%s%s=>0x%08lx <0x%08lx xfrm=%s_%d-%s",
@@ -654,9 +650,9 @@ void fmt_ipsec_sa_established(struct state *st, char *sadetails, size_t sad_len)
 	b = add_str(sadetails, sad_len, b,
 		dpd_active_locally(st) ? " DPD=active" : " DPD=passive");
 
-	if (st->st_username[0] != '\0') {
+	if (st->st_xauth_username[0] != '\0') {
 		b = add_str(sadetails, sad_len, b, " username=");
-		b = add_str(sadetails, sad_len, b, st->st_username);
+		b = add_str(sadetails, sad_len, b, st->st_xauth_username);
 	}
 
 	add_str(sadetails, sad_len, b, "}");

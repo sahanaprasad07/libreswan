@@ -13,6 +13,7 @@ void ikev2_process_packet(struct msg_digest **mdp);
 void ikev2_process_state_packet(struct ike_sa *ike, struct state *st,
 				struct msg_digest **mdp);
 
+/* extern initiator_function ikev2_parent_outI1; */
 extern void ikev2_parent_outI1(int whack_sock,
 			      struct connection *c,
 			      struct state *predecessor,
@@ -31,31 +32,30 @@ extern void complete_v2_state_transition(struct msg_digest **mdp,
 
 extern stf_status ikev2_send_livenss_probe(struct state *st);
 
-extern stf_status ikev2_send_informational(struct state *st, struct state *pst,
-					   v2_notification_t v2N);
+typedef stf_status ikev2_state_transition_fn(struct state *st, struct msg_digest *md);
 
-extern state_transition_fn process_encrypted_informational_ikev2;
+extern ikev2_state_transition_fn process_encrypted_informational_ikev2;
 
-extern crypto_transition_fn ikev2_parent_outI1_tail;
-extern state_transition_fn ikev2_child_ike_inIoutR;
-extern state_transition_fn ikev2_child_ike_inR;
-extern state_transition_fn ikev2_child_inR;
-extern state_transition_fn ikev2_child_inIoutR;
+extern ikev2_state_transition_fn ikev2_child_ike_inIoutR;
+extern ikev2_state_transition_fn ikev2_child_ike_inR;
+extern ikev2_state_transition_fn ikev2_child_inR;
+extern ikev2_state_transition_fn ikev2_child_inIoutR;
 
-extern state_transition_fn ikev2_parent_inI1outR1;
-extern state_transition_fn ikev2_IKE_SA_process_SA_INIT_response_notification;
-extern state_transition_fn ikev2_auth_initiator_process_failure_notification;
-extern state_transition_fn ikev2_auth_initiator_process_unknown_notification;
-extern state_transition_fn ikev2_ike_sa_process_auth_request_no_skeyid;
-extern state_transition_fn ikev2_ike_sa_process_auth_request;
-extern state_transition_fn ikev2_parent_inR1outI2;
-extern state_transition_fn ikev2_parent_inR2;
+extern ikev2_state_transition_fn ikev2_parent_inI1outR1;
+extern ikev2_state_transition_fn ikev2_IKE_SA_process_SA_INIT_response_notification;
+extern ikev2_state_transition_fn ikev2_auth_initiator_process_failure_notification;
+extern ikev2_state_transition_fn ikev2_auth_initiator_process_unknown_notification;
+extern ikev2_state_transition_fn ikev2_ike_sa_process_auth_request_no_skeyid;
+extern ikev2_state_transition_fn ikev2_ike_sa_process_auth_request;
+extern ikev2_state_transition_fn ikev2_parent_inR1outI2;
+extern ikev2_state_transition_fn ikev2_parent_inR2;
+
 extern crypto_transition_fn ikev2_child_out_cont;
 extern crypto_transition_fn ikev2_child_inR_tail;
 extern crypto_transition_fn ikev2_child_ike_rekey_tail;
 extern void ikev2_initiate_child_sa(struct pending *p);
 
-bool ikev2_rekey_ike_start(struct state *st);
+void ikev2_rekey_ike_start(struct state *st);
 
 extern void ikev2_child_outI(struct state *st);
 extern void ikev2_child_send_next(struct state *st);
@@ -90,7 +90,6 @@ struct ikev2_proposal;
 struct ikev2_proposals;
 
 void DBG_log_ikev2_proposal(const char *prefix, struct ikev2_proposal *proposal);
-void DBG_log_ikev2_proposals(const char *prefix, struct ikev2_proposals *proposals);
 
 void free_ikev2_proposal(struct ikev2_proposal **proposal);
 void free_ikev2_proposals(struct ikev2_proposals **proposals);
@@ -139,8 +138,6 @@ bool ikev2_proposal_to_trans_attrs(struct ikev2_proposal *chosen,
 struct ipsec_proto_info *ikev2_child_sa_proto_info(struct state *st, lset_t policy);
 
 ipsec_spi_t ikev2_child_sa_spi(const struct spd_route *spd_route, lset_t policy);
-
-extern stf_status ikev2_process_decrypted_payloads(struct msg_digest *md);
 
 extern bool ikev2_decode_peer_id_and_certs(struct msg_digest *md);
 
@@ -278,7 +275,7 @@ struct state_v2_microcode {
 	struct ikev2_expected_payloads encrypted_payloads;
 
 	enum event_type timeout_event;
-	state_transition_fn *processor;
+	ikev2_state_transition_fn *processor;
 	crypto_transition_fn *crypto_end;
 };
 
@@ -292,7 +289,7 @@ void ikev2_ike_sa_established(struct ike_sa *ike,
 struct ikev2_ipseckey_dns;
 
 extern stf_status ikev2_process_child_sa_pl(struct msg_digest *md,
-		                bool expect_accepted);
+					    bool expect_accepted);
 
 extern bool justship_v2KE(chunk_t *g, const struct oakley_group_desc *group,
 		pb_stream *outs, u_int8_t np);

@@ -16,7 +16,7 @@
 # for more details.
 
 # -D... goes in here
-USERLAND_CFLAGS=-std=gnu99
+USERLAND_CFLAGS+=-std=gnu99
 
 # If you want or need to override the default detected arch
 # GCCM=-m32
@@ -90,8 +90,11 @@ USERLAND_CFLAGS+=-DLIBCURL
 CURL_LDFLAGS ?= -lcurl
 endif
 
+# Build support for the Linux Audit system
+
+USE_LINUX_AUDIT ?= false
 ifeq ($(USE_LINUX_AUDIT),true)
-USERLAND_CFLAGS+=-DUSE_LINUX_AUDIT
+USERLAND_CFLAGS += -DUSE_LINUX_AUDIT
 LINUX_AUDIT_LDFLAGS ?= -laudit
 endif
 
@@ -109,25 +112,33 @@ ifeq ($(USE_NM),true)
 USERLAND_CFLAGS+=-DHAVE_NM
 endif
 
-# if we use pam for password checking then add it too
+# include PAM support for XAUTH when available on the platform
+
+USE_XAUTHPAM?=true
 ifeq ($(USE_XAUTHPAM),true)
 USERLAND_CFLAGS += -DXAUTH_HAVE_PAM
 XAUTHPAM_LDFLAGS ?= -lpam
-endif
-
-ifeq ($(USE_SAREF_KERNEL),true)
-USERLAND_CFLAGS+=-DSAREF_SUPPORTED
 endif
 
 USERLAND_CFLAGS+=-DUSE_MD5
 USERLAND_CFLAGS+=-DUSE_SHA2
 USERLAND_CFLAGS+=-DUSE_SHA1
 USERLAND_CFLAGS+=-DUSE_AES
+USERLAND_CFLAGS+=-DUSE_XCBC
 ifeq ($(USE_3DES),true)
 USERLAND_CFLAGS+=-DUSE_3DES
 endif
+ifeq ($(USE_DH2),true)
+USERLAND_CFLAGS+=-DUSE_DH2
+endif
 ifeq ($(USE_DH22),true)
 USERLAND_CFLAGS+=-DUSE_DH22
+endif
+ifeq ($(USE_DH23),true)
+USERLAND_CFLAGS+=-DUSE_DH23
+endif
+ifeq ($(USE_DH24),true)
+USERLAND_CFLAGS+=-DUSE_DH24
 endif
 ifeq ($(USE_CAMELLIA),true)
 USERLAND_CFLAGS+=-DUSE_CAMELLIA
@@ -149,7 +160,6 @@ endif
 ifeq ($(USE_DH31),true)
 USERLAND_CFLAGS+=-DUSE_DH31
 endif
-USE_XCBC?=true
 ifeq ($(USE_XCBC),true)
 USERLAND_CFLAGS+=-DUSE_XCBC
 endif
@@ -231,6 +241,16 @@ USERLAND_CFLAGS+=$(GCC_LINT)
 
 # Enable ALLOW_MICROSOFT_BAD_PROPOSAL
 USERLAND_CFLAGS+=-DALLOW_MICROSOFT_BAD_PROPOSAL
+
+# some systems require -lcrypt when calling crypt() some do not.
+CRYPT_LDFLAGS ?= -lcrypt
+
+# Support for LIBCAP-NG to drop unneeded capabilities for the pluto daemon
+USE_LIBCAP_NG?=true
+ifeq ($(USE_LIBCAP_NG),true)
+USERLAND_CFLAGS += -DHAVE_LIBCAP_NG
+LIBCAP_NG_LDFLAGS ?= -lcap-ng
+endif
 
 # eventually: -Wshadow -pedantic
 ifeq ($(origin WERROR_CFLAGS),undefined)

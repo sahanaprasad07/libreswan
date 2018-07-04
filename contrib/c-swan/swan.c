@@ -38,10 +38,10 @@
 /* Dummy logger to require less lib dependencies. */
 int libreswan_log(const char *fmt, ...)
 {
-        return 0;
+	return 0;
 }
 
-/* Run external command and return it's output, NUL terminated. */
+/* Run external command and return its output, NUL terminated. */
 static char *run_command(char **params)
 {
 	int link[2];

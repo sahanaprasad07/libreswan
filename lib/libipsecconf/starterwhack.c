@@ -82,7 +82,7 @@ static int send_reply(int sock, char *buf, ssize_t len)
 }
 
 static int starter_whack_read_reply(int sock,
-				char username[MAX_USERNAME_LEN],
+				char xauthusername[MAX_XAUTH_USERNAME_LEN],
 				char xauthpass[XAUTH_MAX_PASS_LENGTH],
 				int usernamelen,
 				int xauthpasslen)
@@ -184,22 +184,22 @@ static int starter_whack_read_reply(int sock,
 				case RC_USERPROMPT:
 					if (usernamelen == 0) {
 						usernamelen = whack_get_value(
-							username,
-							MAX_USERNAME_LEN);
+							xauthusername,
+							MAX_XAUTH_USERNAME_LEN);
 					}
 					if (usernamelen >
-						MAX_USERNAME_LEN) {
+						MAX_XAUTH_USERNAME_LEN) {
 						/*
 						 * for input >= 128,
 						 * useramelen would be 129
 						 */
 						usernamelen =
-							MAX_USERNAME_LEN;
+							MAX_XAUTH_USERNAME_LEN;
 						starter_log(LOG_LEVEL_ERR,
 							"username cannot be >= %d chars",
-							MAX_USERNAME_LEN);
+							MAX_XAUTH_USERNAME_LEN);
 					}
-					ret = send_reply(sock, username,
+					ret = send_reply(sock, xauthusername,
 							usernamelen);
 					if (ret != 0)
 						return ret;
@@ -273,10 +273,10 @@ static int send_whack_msg(struct whack_message *msg, char *ctlsocket)
 
 	/* read reply */
 	{
-		char username[MAX_USERNAME_LEN];
+		char xauthusername[MAX_XAUTH_USERNAME_LEN];
 		char xauthpass[XAUTH_MAX_PASS_LENGTH];
 
-		ret = starter_whack_read_reply(sock, username, xauthpass, 0,
+		ret = starter_whack_read_reply(sock, xauthusername, xauthpass, 0,
 					0);
 		close(sock);
 	}
@@ -394,7 +394,7 @@ static void set_whack_end(char *lr,
 	if (l->options_set[KNCF_SENDCERT])
 		w->sendcert = l->options[KNCF_SENDCERT];
 	else
-		w->sendcert = cert_alwayssend;
+		w->sendcert = CERT_ALWAYSSEND;
 
 	if (l->options_set[KNCF_AUTH])
 		w->authby = l->options[KNCF_AUTH];
@@ -411,7 +411,7 @@ static void set_whack_end(char *lr,
 	if (l->options_set[KNCF_XAUTHCLIENT])
 		w->xauth_client = l->options[KNCF_XAUTHCLIENT];
 	if (l->strings_set[KSCF_USERNAME])
-		w->username = l->strings[KSCF_USERNAME];
+		w->xauth_username = l->strings[KSCF_USERNAME];
 
 	if (l->options_set[KNCF_MODECONFIGSERVER])
 		w->modecfg_server = l->options[KNCF_MODECONFIGSERVER];
@@ -609,9 +609,9 @@ static int starter_whack_basic_add_conn(struct starter_config *cfg,
 
 
 	if (conn->options_set[KBF_ENCAPS])
-               msg.encaps = conn->options[KBF_ENCAPS];
+		msg.encaps = conn->options[KBF_ENCAPS];
 	else
-               msg.encaps = encaps_auto;
+		msg.encaps = yna_auto;
 
 	if (conn->options_set[KBF_NAT_KEEPALIVE])
 		msg.nat_keepalive = conn->options[KBF_NAT_KEEPALIVE];
@@ -621,7 +621,7 @@ static int starter_whack_basic_add_conn(struct starter_config *cfg,
 	if (conn->options_set[KBF_IKEV1_NATT])
 		msg.ikev1_natt = conn->options[KBF_IKEV1_NATT];
 	else
-		msg.ikev1_natt = natt_both;
+		msg.ikev1_natt = NATT_BOTH;
 
 
 	/* Activate sending out own vendorid */

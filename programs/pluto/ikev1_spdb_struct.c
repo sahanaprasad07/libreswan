@@ -1782,7 +1782,7 @@ bool init_aggr_st_oakley(struct state *st, lset_t policy)
 	const struct db_trans *trans = &prop->trans[0];
 
 	passert(trans->attr_cnt == 4 || trans->attr_cnt == 5);
-	
+
 	const struct db_attr *enc  = &trans->attrs[0];
 	const struct db_attr *hash = &trans->attrs[1];
 	const struct db_attr *auth = &trans->attrs[2];
@@ -1908,7 +1908,7 @@ static bool parse_ipsec_transform(struct isakmp_transform *trans,
 
 	*attrs = (struct ipsec_trans_attrs) {
 		.spi = 0,                                               /* spi */
-		.life_seconds = DELTATIME(IPSEC_SA_LIFETIME_DEFAULT),	/* life_seconds */
+		.life_seconds = DELTATIME_INIT(IPSEC_SA_LIFETIME_DEFAULT),	/* life_seconds */
 		.life_kilobytes = SA_LIFE_DURATION_K_DEFAULT,           /* life_kilobytes */
 		.encapsulation = ENCAPSULATION_MODE_UNSPECIFIED,        /* encapsulation */
 	};

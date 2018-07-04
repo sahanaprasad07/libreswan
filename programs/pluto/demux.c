@@ -245,11 +245,12 @@ static struct msg_digest *read_packet(const struct iface_port *ifp)
 	if (packet_len == 1 && _buffer[0] == 0xff) {
 		/**
 		 * NAT-T Keep-alive packets should be discared by kernel ESPinUDP
-		 * layer. But boggus keep-alive packets (sent with a non-esp marker)
+		 * layer. But bogus keep-alive packets (sent with a non-esp marker)
 		 * can reach this point. Complain and discard them.
+		 * Possibly too if the NAT mapping vanished on the initiator NAT gw ?
 		 */
 		LSWDBGP(DBG_NATT, buf) {
-			lswlogs(buf, "NAT-T keep-alive (boggus ?) should not reach this point. Ignored. Sender: ");
+			lswlogs(buf, "NAT-T keep-alive (bogus ?) should not reach this point. Ignored. Sender: ");
 			lswlog_ip(buf, &sender);
 		};
 		return NULL;
@@ -410,8 +411,7 @@ static void process_md(struct msg_digest **mdp)
  * enormous input packet buffer, an auto.
  */
 
-static bool incoming_impaired(void);
-static void impair_incoming(struct msg_digest **mdp);
+static bool impair_incoming(struct msg_digest **mdp);
 
 static void comm_handle(const struct iface_port *ifp)
 {
@@ -430,9 +430,7 @@ static void comm_handle(const struct iface_port *ifp)
 
 	struct msg_digest *md = read_packet(ifp);
 	if (md != NULL) {
-		if (incoming_impaired()) {
-			impair_incoming(&md);
-		} else {
+		if (!impair_incoming(&md)) {
 			process_md(&md);
 		}
 		pexpect(md == NULL);
@@ -488,37 +486,35 @@ static struct list_info replay_info = {
 	.log = log_replay_entry,
 };
 
-static struct replay_entry *replay_entry(struct msg_digest *md)
+static void save_any_md_for_replay(struct msg_digest **mdp)
 {
-	struct replay_entry *e = alloc_thing(struct replay_entry, "replay");
-	e->md = clone_md(md, "copy of real message");
-	e->nr = ++replay_count; /* yes; pre-increment */
-	e->entry = list_entry(&replay_info, e); /* back-link */
-	return e;
+	if (mdp != NULL && *mdp != NULL) {
+		init_list(&replay_info, &replay_packets);
+		struct replay_entry *e = alloc_thing(struct replay_entry, "replay");
+		e->md = clone_md(*mdp, "copy of real message");
+		e->nr = ++replay_count; /* yes; pre-increment */
+		e->entry = list_entry(&replay_info, e); /* back-link */
+		insert_list_entry(&replay_packets, &e->entry);
+		release_any_md(mdp);
+	}
 }
 
-static bool incoming_impaired(void)
+static bool impair_incoming(struct msg_digest **mdp)
 {
-	return (DBGP(IMPAIR_REPLAY_DUPLICATES) ||
-		DBGP(IMPAIR_REPLAY_FORWARD) ||
-		DBGP(IMPAIR_REPLAY_BACKWARD));
-}
-
-static void impair_incoming(struct msg_digest **mdp)
-{
-	/* save this packet */
-	init_list(&replay_info, &replay_packets);
-	struct replay_entry *e = replay_entry(*mdp);
-	insert_list_entry(&replay_packets, &e->entry);
-	/* now behave per enabled impair */
 	if (IMPAIR(REPLAY_DUPLICATES)) {
+		save_any_md_for_replay(mdp);
 		/* MD is the most recent entry */
-		process_md_clone(*mdp, "original");
-		libreswan_log("IMPAIR: start duplicate packet");
-		process_md_clone(e->md, "replay-duplicates");
-		libreswan_log("IMPAIR: stop duplicate packet");
+		struct replay_entry *e = NULL;
+		FOR_EACH_LIST_ENTRY_NEW2OLD(&replay_packets, e) {
+			process_md_clone(e->md, "original");
+			libreswan_log("IMPAIR: start duplicate packet");
+			process_md_clone(e->md, "replay-duplicates");
+			libreswan_log("IMPAIR: stop duplicate packet");
+			break;
+		}
 	}
 	if (IMPAIR(REPLAY_FORWARD)) {
+		save_any_md_for_replay(mdp);
 		struct replay_entry *e = NULL;
 		FOR_EACH_LIST_ENTRY_OLD2NEW(&replay_packets, e) {
 			libreswan_log("IMPAIR: start replay forward: packet %lu of %lu",
@@ -529,6 +525,7 @@ static void impair_incoming(struct msg_digest **mdp)
 		}
 	}
 	if (IMPAIR(REPLAY_BACKWARD)) {
+		save_any_md_for_replay(mdp);
 		struct replay_entry *e = NULL;
 		FOR_EACH_LIST_ENTRY_NEW2OLD(&replay_packets, e) {
 			libreswan_log("IMPAIR: start replay backward: packet %lu of %lu",
@@ -538,7 +535,8 @@ static void impair_incoming(struct msg_digest **mdp)
 				      e->nr, replay_count);
 		}
 	}
-	release_any_md(mdp);
+	/* MDP NULL implies things were impaired */
+	return *mdp == NULL;
 }
 
 static pluto_event_now_cb handle_md_event; /* type assertion */
@@ -558,29 +556,32 @@ void schedule_md_event(const char *name, struct msg_digest *md)
 	pluto_event_now(name, SOS_NOBODY, handle_md_event, md);
 }
 
-/* Auxiliary function for modecfg_inR1() */
+/*
+ * cisco_stringify()
+ *
+ * Auxiliary function for modecfg_inR1()
+ * Result is allocated on heap so caller must ensure it is freed.
+ */
 char *cisco_stringify(pb_stream *pbs, const char *attr_name)
 {
 	char strbuf[500]; /* Cisco maximum unknown - arbitrary choice */
 	size_t len = pbs_left(pbs);
 
 	if (len > sizeof(strbuf) - 1)
-		len = sizeof(strbuf) - 1;
+		len = sizeof(strbuf) - 1;	/* silently truncate */
 
 	memcpy(strbuf, pbs->cur, len);
 	strbuf[len] = '\0';
-	/* ' is poison to the way this string will be used
+
+	/*
+	 * ' is poison to the way this string will be used
 	 * in system() and hence shell.  Remove any.
 	 */
-	{
-		char *s = strbuf;
-
-		for (;; ) {
-			s = strchr(s, '\'');
-			if (s == NULL)
-				break;
-			*s = '?';
-		}
+	for (char *s = strbuf;; ) {
+		s = strchr(s, '\'');
+		if (s == NULL)
+			break;
+		*s = '?';
 	}
 	sanitize_string(strbuf, sizeof(strbuf));
 	loglog(RC_INFORMATIONAL, "Received %s: %s", attr_name, strbuf);

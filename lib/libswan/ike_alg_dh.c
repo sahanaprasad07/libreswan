@@ -41,6 +41,7 @@ const struct oakley_group_desc unset_group = {
 	.group = 65535, /* Reserved for private use */
 };
 
+#ifdef USE_DH2
 const struct oakley_group_desc oakley_group_modp1024 = {
 	.common = {
 		.algo_type = IKE_ALG_DH,
@@ -60,6 +61,7 @@ const struct oakley_group_desc oakley_group_modp1024 = {
 	.bytes = BYTES_FOR_BITS(1024),
 	.dh_ops = &ike_alg_dh_nss_modp_ops,
 };
+#endif
 
 const struct oakley_group_desc oakley_group_modp1536 = {
 	.common = {
@@ -268,6 +270,7 @@ const struct oakley_group_desc oakley_group_dh22 = {
 };
 #endif
 
+#ifdef USE_DH23
 const struct oakley_group_desc oakley_group_dh23 = {
 	.common = {
 		.algo_type = IKE_ALG_DH,
@@ -288,7 +291,9 @@ const struct oakley_group_desc oakley_group_dh23 = {
 	.bytes = BYTES_FOR_BITS(2048),
 	.dh_ops = &ike_alg_dh_nss_modp_ops,
 };
+#endif
 
+#ifdef USE_DH24
 const struct oakley_group_desc oakley_group_dh24 = {
 	.common = {
 		.algo_type = IKE_ALG_DH,
@@ -309,6 +314,7 @@ const struct oakley_group_desc oakley_group_dh24 = {
 	.bytes = BYTES_FOR_BITS(2048),
 	.dh_ops = &ike_alg_dh_nss_modp_ops,
 };
+#endif
 
 /* https://tools.ietf.org/html/rfc8031 */
 

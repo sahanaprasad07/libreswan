@@ -73,6 +73,7 @@
 #include "state.h"
 #include "ipsec_doi.h"	/* needs demux.h and state.h */
 #include "fetch.h"
+#include "crl_queue.h"
 #include "timer.h"
 #include "ipsecconf/confread.h"
 #include "xauth.h"
@@ -439,7 +440,7 @@ static bool pluto_init_nss(char *nssdir)
 }
 
 /* 0 is special and default: do not check crls dynamically */
-deltatime_t crl_check_interval = DELTATIME(0);
+deltatime_t crl_check_interval = DELTATIME_INIT(0);
 
 #ifdef HAVE_LABELED_IPSEC
 /*
@@ -705,7 +706,7 @@ int main(int argc, char **argv)
 	pluto_dnssec_rootfile = clone_str(DEFAULT_DNSSEC_ROOTKEY_FILE, "root.key file");
 #endif
 
-	deltatime_t keep_alive = DELTATIME(0);
+	deltatime_t keep_alive = DELTATIME_INIT(0);
 
 	/* Overridden by virtual_private= in ipsec.conf */
 	char *virtual_private = NULL;
@@ -1226,8 +1227,8 @@ int main(int argc, char **argv)
 			pluto_port = cfg->setup.options[KBF_IKEPORT];
 
 			/* --ike-socket-bufsize */
-                        pluto_sock_bufsize = cfg->setup.options[KBF_IKEBUF];
-                        pluto_sock_errqueue = cfg->setup.options[KBF_IKE_ERRQUEUE];
+			pluto_sock_bufsize = cfg->setup.options[KBF_IKEBUF];
+			pluto_sock_errqueue = cfg->setup.options[KBF_IKE_ERRQUEUE];
 
 			/* --nflog-all */
 			/* only causes nflog nmber to show in ipsec status */
@@ -1755,6 +1756,8 @@ int main(int argc, char **argv)
 	return -1;	/* Shouldn't ever reach this */
 }
 
+volatile bool exiting_pluto = false;
+
 /*
  * leave pluto, with status.
  * Once child is launched, parent must not exit this way because
@@ -1766,6 +1769,17 @@ int main(int argc, char **argv)
  */
 void exit_pluto(int status)
 {
+	/*
+	 * Tell the world, well actually all the threads, that pluto
+	 * is exiting and they should quit.  Even if pthread_cancel()
+	 * weren't buggy, using it correctly would be hard, so use
+	 * this instead.
+	 *
+	 * XXX: All threads need to be told to quit before things like
+	 * NSS can be closed.  So a TODO is to join those threads.
+	 */
+	exiting_pluto = true;
+
 	/* needed because we may be called in odd state */
 	reset_globals();
  #ifdef USE_SYSTEMD_WATCHDOG
@@ -1847,8 +1861,8 @@ void show_setup_plutomain(void)
 		log_to_perpeer ? peerlog_basedir : "no",
 		bool_str(log_append),
 		bool_str(log_ip),
-                deltasecs(pluto_shunt_lifetime),
-                (intmax_t) pluto_xfrmlifetime
+		deltasecs(pluto_shunt_lifetime),
+		(intmax_t) pluto_xfrmlifetime
 	);
 
 	whack_log(RC_COMMENT,
@@ -1864,7 +1878,7 @@ void show_setup_plutomain(void)
 		pluto_sock_bufsize,
 		bool_str(pluto_sock_errqueue),
 		bool_str(crl_strict),
-                deltasecs(crl_check_interval),
+		deltasecs(crl_check_interval),
 		pluto_listen != NULL ? pluto_listen : "<any>",
 		pluto_nflog_group
 		);

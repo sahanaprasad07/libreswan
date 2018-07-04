@@ -545,12 +545,15 @@ static stf_status modecfg_send_set(struct state *st)
 			  LELEM(INTERNAL_IP4_SUBNET) | \
 			  LELEM(INTERNAL_IP4_DNS))
 
-	modecfg_resp(st,
+	stf_status stat = modecfg_resp(st,
 		     MODECFG_SET_ITEM,
 		     &rbody,
 		     ISAKMP_CFG_SET,
 		     TRUE,
 		     0 /* XXX ID */);
+
+	if (stat != STF_OK)
+		return stat;
 #undef MODECFG_SET_ITEM
 
 	/* Transmit */
@@ -1142,7 +1145,7 @@ static void ikev1_xauth_callback(struct state *st,
 		if (st->quirks.xauth_ack_msgid)
 			st->st_msgid_phase15 = v1_MAINMODE_MSGID;
 
-		jam_str(st->st_username, sizeof(st->st_username), name);
+		jam_str(st->st_xauth_username, sizeof(st->st_xauth_username), name);
 	} else {
 		/*
 		 * Login attempt failed, display error, send XAUTH status to client
@@ -1211,10 +1214,8 @@ static int xauth_launch_authent(struct state *st,
 		return 0;
 #endif
 
-	char *arg_name = alloc_bytes(name->len + 1, "XAUTH Name");
-	memcpy(arg_name, name->ptr, name->len);
-	char *arg_password = alloc_bytes(password->len + 1, "XAUTH Name");
-	memcpy(arg_password, password->ptr, password->len);
+	char *arg_name = str_from_chunk(*name, "XAUTH Name");
+	char *arg_password = str_from_chunk(*password, "XAUTH Name");
 
 	/*
 	 * For XAUTH, we're flipping between retransmitting the packet
@@ -1255,8 +1256,8 @@ static int xauth_launch_authent(struct state *st,
 		bad_case(st->st_connection->xauthby);
 	}
 
-	pfree(arg_name);
-	pfree(arg_password);
+	pfreeany(arg_name);
+	pfreeany(arg_password);
 
 	return 0;
 }
@@ -1607,7 +1608,9 @@ static stf_status modecfg_inI2(struct msg_digest *md, pb_stream *rbody)
 			char caddr[SUBNETTOT_BUF];
 
 			u_int32_t *ap = (u_int32_t *)(strattr.cur);
-			a.u.v4.sin_family = AF_INET;
+			SET_V4(a);
+			/* ??? this code should ensure that the size of the attribute value is correct */
+			/* ??? this code is duplicated four times! */
 			memcpy(&a.u.v4.sin_addr.s_addr, ap,
 			       sizeof(a.u.v4.sin_addr.s_addr));
 			addrtosubnet(&a, &c->spd.this.client);
@@ -1776,7 +1779,9 @@ stf_status modecfg_inR1(struct state *st, struct msg_digest *md)
 
 				u_int32_t *ap =
 					(u_int32_t *)(strattr.cur);
-				a.u.v4.sin_family = AF_INET;
+				SET_V4(a);
+				/* ??? this code should ensure that the size of the attribute value is correct */
+				/* ??? this code is duplicated four times! */
 				memcpy(&a.u.v4.sin_addr.s_addr, ap,
 				       sizeof(a.u.v4.sin_addr.s_addr));
 				addrtosubnet(&a, &c->spd.this.client);
@@ -1810,7 +1815,9 @@ stf_status modecfg_inR1(struct state *st, struct msg_digest *md)
 				ipstr_buf b;
 				u_int32_t *ap = (u_int32_t *)(strattr.cur);
 
-				a.u.v4.sin_family = AF_INET;
+				SET_V4(a);
+				/* ??? this code should ensure that the size of the attribute value is correct */
+				/* ??? this code is duplicated four times! */
 				memcpy(&a.u.v4.sin_addr.s_addr, ap,
 				       sizeof(a.u.v4.sin_addr.s_addr));
 
@@ -1827,7 +1834,9 @@ stf_status modecfg_inR1(struct state *st, struct msg_digest *md)
 
 				u_int32_t *ap =
 					(u_int32_t *)(strattr.cur);
-				a.u.v4.sin_family = AF_INET;
+				SET_V4(a);
+				/* ??? this code should ensure that the size of the attribute value is correct */
+				/* ??? this code is duplicated four times! */
 				memcpy(&a.u.v4.sin_addr.s_addr, ap,
 				       sizeof(a.u.v4.sin_addr.s_addr));
 
@@ -1870,7 +1879,7 @@ stf_status modecfg_inR1(struct state *st, struct msg_digest *md)
 
 					if (!in_struct(&i, &CISCO_split_desc, &strattr, NULL)) {
 						loglog(RC_INFORMATIONAL,
-                                                    "ignoring malformed CISCO_SPLIT_INC payload");
+						    "ignoring malformed CISCO_SPLIT_INC payload");
 						break;
 					}
 
@@ -1986,7 +1995,7 @@ static stf_status xauth_client_resp(struct state *st,
 			     u_int16_t ap_id)
 {
 	unsigned char *r_hash_start, *r_hashval;
-	char xauth_username[MAX_USERNAME_LEN];
+	char xauth_username[MAX_XAUTH_USERNAME_LEN];
 	struct connection *c = st->st_connection;
 
 	/* START_HASH_PAYLOAD(rbody, ISAKMP_NEXT_MCFG_ATTR); */
@@ -2010,7 +2019,6 @@ static stf_status xauth_client_resp(struct state *st,
 	/* MCFG_ATTR out */
 	{
 		pb_stream strattr;
-		int attr_type;
 
 		{
 			struct isakmp_mode_attr attrh;
@@ -2022,12 +2030,11 @@ static stf_status xauth_client_resp(struct state *st,
 				return STF_INTERNAL_ERROR;
 		}
 
-		attr_type = XAUTH_TYPE;
+		/* lset_t xauth_resp is used as a secondary index variable */
 
-		while (xauth_resp != LEMPTY) {
+		for (int attr_type = XAUTH_TYPE; xauth_resp != LEMPTY; attr_type++) {
 			if (xauth_resp & 1) {
 				/* ISAKMP attr out */
-				bool password_read_from_prompt = FALSE;
 				struct isakmp_attribute attr;
 				pb_stream attrval;
 
@@ -2054,7 +2061,7 @@ static stf_status xauth_client_resp(struct state *st,
 							&attrval))
 						return STF_INTERNAL_ERROR;
 
-					if (st->st_username[0] == '\0') {
+					if (st->st_xauth_username[0] == '\0') {
 						if (st->st_whack_sock == -1) {
 							loglog(RC_LOG_SERIOUS,
 							       "XAUTH username requested, but no file descriptor available for prompt");
@@ -2082,14 +2089,14 @@ static stf_status xauth_client_resp(struct state *st,
 							if (cptr != NULL)
 								*cptr = '\0';
 						}
-						jam_str(st->st_username,
-							sizeof(st->st_username),
+						jam_str(st->st_xauth_username,
+							sizeof(st->st_xauth_username),
 							xauth_username);
 					}
 
-					if (!out_raw(st->st_username,
+					if (!out_raw(st->st_xauth_username,
 						     strlen(st->
-							    st_username),
+							    st_xauth_username),
 						     &attrval,
 						     "XAUTH username"))
 						return STF_INTERNAL_ERROR;
@@ -2113,11 +2120,11 @@ static stf_status xauth_client_resp(struct state *st,
 						struct secret *s =
 							lsw_get_xauthsecret(
 								st->st_connection,
-								st->st_username);
+								st->st_xauth_username);
 
 						DBG(DBG_CONTROLMORE,
 						    DBG_log("looked up username=%s, got=%p",
-							    st->st_username,
+							    st->st_xauth_username,
 							    s));
 						if (s != NULL) {
 							struct private_key_stuff
@@ -2130,6 +2137,13 @@ static stf_status xauth_client_resp(struct state *st,
 								"savedxauth password");
 						}
 					}
+
+					/*
+					 * If we don't already have a password,
+					 * try to ask for one through whack.
+					 * We'll discard this password after use.
+					 */
+					bool discard_pw = FALSE;
 
 					if (st->st_xauth_password.ptr == NULL) {
 						char xauth_password[XAUTH_MAX_PASS_LENGTH];
@@ -2166,26 +2180,22 @@ static stf_status xauth_client_resp(struct state *st,
 							xauth_password,
 							strlen(xauth_password),
 							"XAUTH password");
-						password_read_from_prompt =
-							TRUE;
+						discard_pw = TRUE;
 					}
 
 					if (!out_chunk(st->st_xauth_password,
-						     &attrval,
-						     "XAUTH password"))
+						       &attrval,
+						       "XAUTH password")) {
+						if (discard_pw) {
+							freeanychunk(
+								st->st_xauth_password);
+						}
 						return STF_INTERNAL_ERROR;
+					}
 
-					/*
-					 * Do not store the password read from the prompt. The password
-					 * could have been read from a one-time token device (like SecureID)
-					 * or the password could have been entereted wrong,
-					 */
-					if (password_read_from_prompt) {
+					if (discard_pw) {
 						freeanychunk(
 							st->st_xauth_password);
-						st->st_xauth_password.len = 0;
-						password_read_from_prompt =
-							FALSE;	/* ??? never used? */
 					}
 					close_output_pbs(&attrval);
 					break;
@@ -2199,7 +2209,6 @@ static stf_status xauth_client_resp(struct state *st,
 				}
 			}
 
-			attr_type++;
 			xauth_resp >>= 1;
 		}
 
@@ -2208,7 +2217,7 @@ static stf_status xauth_client_resp(struct state *st,
 	}
 
 	libreswan_log("XAUTH: Answering XAUTH challenge with user='%s'",
-		      st->st_username);
+		      st->st_xauth_username);
 
 	xauth_mode_cfg_hash(r_hashval, r_hash_start, rbody->cur, st);
 
@@ -2385,7 +2394,7 @@ stf_status xauth_inI0(struct state *st, struct msg_digest *md)
 						      ISAKMP_NEXT_MCFG_ATTR]->payload.mode_attribute.isama_identifier);
 
 		/* must have gotten a status */
-		if (status && stat == STF_OK) {
+		if (status != XAUTH_STATUS_FAIL && stat == STF_OK) {
 			st->hidden_variables.st_xauth_client_done =
 				TRUE;
 			loglog(RC_LOG,"XAUTH: Successfully Authenticated");

@@ -50,6 +50,8 @@ extern bool ikev1_ship_KE(struct state *st,
 		    pb_stream *outs, u_int8_t np);
 
 /* **MAIN MODE FUNCTIONS** in ikev1_main.c */
+
+/* extern initiator_function main_outI1; */
 extern void main_outI1(int whack_sock,
 		       struct connection *c,
 		       struct state *predecessor,
@@ -61,6 +63,7 @@ extern void main_outI1(int whack_sock,
 #endif
 		       );
 
+/* extern initiator_function aggr_outI1; */
 extern void aggr_outI1(int whack_sock,
 		       struct connection *c,
 		       struct state *predecessor,
@@ -77,10 +80,6 @@ extern void send_v1_delete(struct state *st);
 extern bool ikev1_decode_peer_id(struct msg_digest *md, bool initiator,
 			   bool aggrmode);
 
-extern bool ikev1_ship_ca_chain(cert_t chain, cert_t ee,
-					      pb_stream *outs,
-					      u_int8_t setnp,
-					      bool send_full_chain);
 extern size_t RSA_sign_hash(struct connection *c,
 			    u_char sig_val[RSA_MAX_OCTETS],
 			    const u_char *hash_val, size_t hash_len,
@@ -91,16 +90,6 @@ main_mode_hash(struct state *st,
 	       u_char *hash_val,        /* resulting bytes */
 	       bool hashi,              /* Initiator? */
 	       const pb_stream *idpl);  /* ID payload, as PBS; cur must be at end */
-
-enum key_oppo_step {
-	kos_null,
-	kos_his_txt
-#ifdef USE_KEYRR
-	, kos_his_key
-#endif
-};
-
-typedef stf_status key_tail_fn(struct msg_digest *md);
 
 extern stf_status oakley_id_and_auth(struct msg_digest *md,
 				     bool initiator,                    /* are we the Initiator? */
@@ -134,5 +123,19 @@ extern bool ikev1_out_sa(pb_stream *outs,
 
 bool ikev1_encrypt_message(pb_stream *pbs, struct state *st);
 bool ikev1_close_message(pb_stream *pbs, struct state *st);
+
+typedef stf_status ikev1_state_transition_fn(struct state *st, struct msg_digest *md);
+extern ikev1_state_transition_fn main_inI1_outR1;
+extern ikev1_state_transition_fn main_inR1_outI2;
+extern ikev1_state_transition_fn main_inI2_outR2;
+extern ikev1_state_transition_fn main_inR2_outI3;
+extern ikev1_state_transition_fn main_inI3_outR3;
+extern ikev1_state_transition_fn main_inR3;
+extern ikev1_state_transition_fn aggr_inI1_outR1;
+extern ikev1_state_transition_fn aggr_inR1_outI2;
+extern ikev1_state_transition_fn aggr_inI2;
+extern ikev1_state_transition_fn quick_inI1_outR1;
+extern ikev1_state_transition_fn quick_inR1_outI2;
+extern ikev1_state_transition_fn quick_inI2;
 
 #endif

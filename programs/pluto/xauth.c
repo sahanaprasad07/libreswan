@@ -13,11 +13,8 @@
  * for more details.
  */
 
-#ifdef XAUTH_HAVE_PAM
-
-#include <pthread.h> /* Must be the first include file */
-
 #include <stdlib.h>
+#include <sys/wait.h>		/* for WIFEXITED() et.al. */
 
 #include "constants.h"
 #include "lswlog.h"
@@ -168,8 +165,6 @@ void xauth_start_pam_thread(struct state *st,
 
 	/* now start the xauth child process */
 
-	passert(pthread_equal(main_thread, pthread_self()));
-
 	struct xauth *xauth = alloc_thing(struct xauth, "xauth arg");
 
 	xauth->callback = callback;
@@ -204,5 +199,3 @@ void xauth_start_pam_thread(struct state *st,
 	st->st_xauth = xauth;
 	pstats_xauth_started++;
 }
-
-#endif

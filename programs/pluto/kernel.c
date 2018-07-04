@@ -29,7 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <sys/wait.h>
+#include <sys/wait.h>		/* for WIFEXITED() et.al. */
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/utsname.h>
@@ -119,6 +119,7 @@ static int num_ipsec_eroute = 0;
 
 static void DBG_bare_shunt(const char *op, const struct bare_shunt *bs)
 {
+	/* same as log_bare_shunt but goes to debug log */
 	DBG(DBG_KERNEL, {
 		int ourport = ntohs(portof(&bs->ours.addr));
 		int hisport = ntohs(portof(&bs->his.addr));
@@ -140,7 +141,7 @@ static void DBG_bare_shunt(const char *op, const struct bare_shunt *bs)
 
 static void log_bare_shunt(const char *op, const struct bare_shunt *bs)
 {
-	/* same as DBG_bare_shunt but goe to real log */
+	/* same as DBG_bare_shunt but goes to real log */
 	int ourport = ntohs(portof(&bs->ours.addr));
 	int hisport = ntohs(portof(&bs->his.addr));
 	char ourst[SUBNETTOT_BUF];
@@ -399,6 +400,36 @@ static void fmt_traffic_str(struct state *st, char *istr, size_t istr_len, char 
 }
 
 /*
+ * Remove all characters but [-_.0-9a-zA-Z] from a character string.
+ * Truncates the result if it would be too long.
+ */
+static char *clean_xauth_username(const char *src, char *dst, size_t dstlen)
+{
+	bool changed = FALSE;
+
+	passert(dstlen >= 1);
+	while (*src != '\0' && dstlen > 1) {
+		if ((*src >= '0' && *src <= '9') ||
+		    (*src >= 'a' && *src <= 'z') ||
+		    (*src >= 'A' && *src <= 'Z') ||
+		    *src == '_' || *src == '-' || *src == '.') {
+			*dst++ = *src;
+			dstlen--;
+		} else {
+			changed = TRUE;
+		}
+		src++;
+	}
+	*dst = '\0';
+	if (changed || *src != '\0') {
+		libreswan_log(
+			"Warning: XAUTH username changed from '%s' to '%s'",
+			src, dst);
+	}
+	return dst;
+}
+
+/*
  * form the command string
  *
  * note: this mutates *st by calling fmt_traffic_str
@@ -486,17 +517,18 @@ int fmt_common_shell_out(char *buf, int blen, const struct connection *c,
 
 	secure_xauth_username_str[0] = '\0';
 
-	if (st != NULL && st->st_username[0] != '\0') {
+	if (st != NULL && st->st_xauth_username[0] != '\0') {
 		char *p = jam_str(secure_xauth_username_str,
 				sizeof(secure_xauth_username_str),
 				"PLUTO_USERNAME='");
 
-		remove_metachar(st->st_username,
+		p = clean_xauth_username(st->st_xauth_username,
 				p,
 				sizeof(secure_xauth_username_str) -
 				(p - secure_xauth_username_str) - 2);
-		add_str(secure_xauth_username_str,
-			sizeof(secure_xauth_username_str), p, "' ");
+		passert(p - secure_xauth_username_str + 2 <
+			(ptrdiff_t)sizeof(secure_xauth_username_str));
+		strcpy(p, "' ");	/* 2 extra chars */
 	}
 	fmt_traffic_str(st, traffic_in_str, sizeof(traffic_in_str), traffic_out_str, sizeof(traffic_out_str));
 
@@ -644,7 +676,7 @@ int fmt_common_shell_out(char *buf, int blen, const struct connection *c,
 		(st != NULL && st->st_xauth_soft) ? 1 : 0,
 		secure_xauth_username_str,	/* 30 */
 		srcip_str,
-		c->remotepeertype, /* kind of odd printing an enum with %u */
+		c->remotepeertype, /* ??? kind of odd printing an enum with %u */
 		(st != NULL && st->st_seen_cfg_dns != NULL) ? st->st_seen_cfg_dns : "",
 		(st != NULL && st->st_seen_cfg_domains != NULL) ? st->st_seen_cfg_domains : "",
 		(st != NULL && st->st_seen_cfg_banner != NULL) ? st->st_seen_cfg_banner : "",	/* 35 */
@@ -1068,8 +1100,8 @@ static bool shunt_eroute(const struct connection *c,
 {
 	DBG(DBG_CONTROL, DBG_log("shunt_eroute() called for connection '%s' to '%s' for rt_kind '%s' using protoports %d--%d->-%d",
 		c->name, opname, enum_name(&routing_story, rt_kind),
-                sr->this.protocol, ntohs(portof(&sr->this.client.addr)),
-                ntohs(portof(&sr->that.client.addr))));
+		sr->this.protocol, ntohs(portof(&sr->this.client.addr)),
+		ntohs(portof(&sr->that.client.addr))));
 
 	if (kernel_ops->shunt_eroute != NULL) {
 		return kernel_ops->shunt_eroute(c, sr, rt_kind, op, opname);
@@ -1759,12 +1791,12 @@ static bool del_spi(ipsec_spi_t spi, int proto,
 static void setup_esp_nic_offload(struct kernel_sa *sa, struct connection *c,
 		bool *nic_offload_fallback)
 {
-	if (c->nic_offload == nic_offload_no ||
+	if (c->nic_offload == yna_no ||
 	    c->interface == NULL || c->interface->ip_dev == NULL ||
 	    c->interface->ip_dev->id_rname == NULL)
 		return;
 
-	if (c->nic_offload == nic_offload_auto) {
+	if (c->nic_offload == yna_auto) {
 		if (!c->interface->ip_dev->id_nic_offload)
 			return;
 
@@ -2489,7 +2521,6 @@ fail:
 	}
 }
 
-/* teardown_ipsec_sa is a canibalized version of setup_ipsec_sa */
 static bool teardown_half_ipsec_sa(struct state *st, bool inbound)
 {
 	/*
@@ -2509,27 +2540,25 @@ static bool teardown_half_ipsec_sa(struct state *st, bool inbound)
 
 	/* ??? CLANG 3.5 thinks that c might be NULL */
 	if (kernel_ops->inbound_eroute && inbound &&
-		c->spd.eroute_owner == SOS_NOBODY) {
+	    c->spd.eroute_owner == SOS_NOBODY) {
 		if (!raw_eroute(&c->spd.that.host_addr,
-					&c->spd.that.client,
-					&c->spd.this.host_addr,
-					&c->spd.this.client,
-					SPI_PASS, SPI_PASS,
-					c->encapsulation ==
-					ENCAPSULATION_MODE_TRANSPORT ?
+				&c->spd.that.client,
+				&c->spd.this.host_addr,
+				&c->spd.this.client,
+				SPI_PASS, SPI_PASS,
+				c->encapsulation == ENCAPSULATION_MODE_TRANSPORT ?
 					SA_ESP : IPSEC_PROTO_ANY,
-					c->spd.this.protocol,
-					c->encapsulation ==
-					ENCAPSULATION_MODE_TRANSPORT ?
+				c->spd.this.protocol,
+				c->encapsulation == ENCAPSULATION_MODE_TRANSPORT ?
 					ET_ESP : ET_UNSPEC,
-					null_proto_info,
-					deltatime(0),
-					calculate_sa_prio(c),
-					&c->sa_marks,
-					ERO_DEL_INBOUND,
-					"delete inbound"
+				null_proto_info,
+				deltatime(0),
+				calculate_sa_prio(c),
+				&c->sa_marks,
+				ERO_DEL_INBOUND,
+				"delete inbound"
 #ifdef HAVE_LABELED_IPSEC
-					, c->policy_label
+				, c->policy_label
 #endif
 				)) {
 			libreswan_log("raw_eroute in teardown_half_ipsec_sa() failed to delete inbound");
@@ -2616,7 +2645,7 @@ static void kernel_process_queue_cb(evutil_socket_t fd UNUSED,
 static char kversion[256];
 
 const struct kernel_ops *kernel_ops = NULL;
-deltatime_t bare_shunt_interval = DELTATIME(SHUNT_SCAN_INTERVAL);
+deltatime_t bare_shunt_interval = DELTATIME_INIT(SHUNT_SCAN_INTERVAL);
 
 
 void init_kernel(void)
@@ -2738,7 +2767,7 @@ void init_kernel(void)
 		 * call process_queue periodically.  Does the order
 		 * matter?
 		 */
-		static const deltatime_t delay = DELTATIME(KERNEL_PROCESS_Q_PERIOD);
+		static const deltatime_t delay = DELTATIME_INIT(KERNEL_PROCESS_Q_PERIOD);
 
 		/* Note: kernel_ops is read-only but pluto_event_add cannot know that */
 		pluto_event_add(NULL_FD, EV_TIMEOUT | EV_PERSIST,
@@ -2904,7 +2933,7 @@ bool route_and_eroute(struct connection *c,
 		route_installed = FALSE;
 
 	DBG(DBG_CONTROLMORE, DBG_log("route_and_eroute() for proto %d, and source port %d dest port %d",
-                sr->this.protocol, sr->this.port, sr->that.port));
+		sr->this.protocol, sr->this.port, sr->that.port));
 	setportof(htons(sr->this.port), &sr->this.client.addr);
 	setportof(htons(sr->that.port), &sr->that.client.addr);
 

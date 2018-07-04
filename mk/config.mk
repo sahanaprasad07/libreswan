@@ -3,7 +3,7 @@
 # Copyright (C) 2001, 2002  Henry Spencer.
 # Copyright (C) 2003-2006   Xelerance Corporation
 # Copyright (C) 2012 Paul Wouters <paul@libreswan.org>
-# Copyright (C) 2015,2017 Andrew Cagney
+# Copyright (C) 2015,2017-2018 Andrew Cagney
 # Copyright (C) 2015-2016 Tuomo Soini <tis@foobar.fi>
 #
 # This program is free software; you can redistribute it and/or modify it
@@ -72,11 +72,6 @@ include ${LIBRESWANSRCDIR}/mk/defaults/${BUILDENV}.mk
 #
 # Note: Variables here are for Makefiles and build system only.
 # IPSEC_ prefixed variables are to be used in source code
-
-
-### boilerplate, do not change, various scripts use extended BASH syntax!
-SHELL=/bin/bash
-export SHELL
 
 ### install pathnames
 
@@ -162,7 +157,7 @@ FINALLOGDIR?=$(FINALVARDIR)/log
 LOGDIR?=$(DESTDIR)$(FINALLOGDIR)
 
 # Note: this variable gets passed in, as in "make INITSYSTEM=systemd"
-INITSYSTEM ?= $(shell $(SHELL) $(top_srcdir)/packaging/utils/lswan_detect.sh init)
+INITSYSTEM ?= $(shell $(top_srcdir)/packaging/utils/lswan_detect.sh init)
 
 # An attempt is made to automatically figure out where boot/shutdown scripts
 # will finally go:  the first directory in INC_RCDIRS that exists gets them.
@@ -224,13 +219,11 @@ INSTALL?=install
 # Note that the install procedures will never overwrite an existing config
 # file, which is why -b is not specified for them.
 INSTBINFLAGS?=-b --suffix=.old
-INSTSUIDFLAGS?=--mode=u+rxs,g+rx,o+rx --group=root -b --suffix=.old
 
 # busybox install is not emulating a real install command well enough
 SWANCHECKLINK=$(shell readlink /usr/bin/install)
 ifeq ($(SWANCHECKLINK /bin/busybox),)
 INSTBINFLAGS=
-INSTSUIDFLAGS=-m 0755 -g root -o root
 endif
 
 
@@ -238,7 +231,6 @@ INSTMANFLAGS?=--mode=0644
 INSTCONFFLAGS?=--mode=0644
 # For OSX use
 #INSTBINFLAGS?=-b -B .old
-#INSTSUIDFLAGS?=--mode=u+rxs,g+rx,o+rx --group=root -b -B .old
 
 # flags for bison, overrode in packages/default/foo
 BISONOSFLAGS?=
@@ -373,6 +365,13 @@ USE_SINGLE_CONF_DIR?=false
 # Except this to change in Q1 2011
 USE_KEYRR?=true
 
+# include support for BSD/KAME IPsec in pluto (on *BSD and OSX)
+USE_BSDKAME?=false
+ifeq ($(USE_BSDKAME),true)
+USE_NETKEY=false
+USE_KLIPS=false
+endif
+
 # Build support for Linux 2.4 and 2.6 KLIPS kernel level IPsec support
 # for pluto
 USE_KLIPS?=true
@@ -384,9 +383,6 @@ USE_MAST?=false
 ifeq ($(USE_MAST),true)
 USE_KLIPS=true
 endif
-
-# MAST is generally a prerequisite for SAREF support in applications
-USE_SAREF_KERNEL?=false
 
 # Build support for Linux NETKEY (XFRM) kernel level IPsec support for
 # pluto (aka "native", "kame")
@@ -403,36 +399,9 @@ USE_PFKEYv2=true
 endif
 endif
 
-# include support for BSD/KAME IPsec in pluto (on *BSD and OSX)
-USE_BSDKAME?=false
-ifeq ($(USE_BSDKAME),true)
-USE_NETKEY=false
-USE_KLIPS=false
-endif
-
-# include PAM support for XAUTH when available on the platform
-
-ifeq ($(OSDEP),linux)
-USE_XAUTHPAM?=true
-endif
-ifeq ($(OSDEP),bsd)
-USE_XAUTHPAM?=true
-endif
-ifeq ($(OSDEP),darwin)
-USE_XAUTHPAM?=true
-endif
-ifeq ($(OSDEP),sunos)
-USE_XAUTHPAM?=true
-endif
-
 # Build support for integrity check for libreswan on startup
 USE_FIPSCHECK?=false
 FIPSPRODUCTCHECK?=/etc/system-fips
-
-# Build support for the Linux Audit system
-ifeq ($(OSDEP),linux)
-USE_LINUX_AUDIT?=false
-endif
 
 # Enable Labeled IPsec Functionality (requires SElinux)
 USE_LABELED_IPSEC?=false
@@ -440,17 +409,8 @@ USE_LABELED_IPSEC?=false
 # Enable seccomp support (whitelist allows syscalls)
 USE_SECCOMP?=false
 
-# Support for LIBCAP-NG to drop unneeded capabilities for the pluto daemon
-USE_LIBCAP_NG?=true
-ifeq ($(OSDEP),darwin)
-USE_LIBCAP_NG=false
-endif
-
 # Support for Network Manager
 USE_NM?=true
-ifeq ($(OSDEP),darwin)
-USE_NM=false
-endif
 
 # Include LDAP support (currently used for fetching CRLs)
 USE_LDAP?=false
@@ -462,13 +422,18 @@ USE_LIBCURL?=true
 # amount of code space to pluto, and many of the algorithms have not had
 # the same scrutiny that AES and 3DES have received, but offers possibilities
 # of switching away from AES/3DES quickly.
-# DH22 is too weak - the others listed here are not broken, just not popular
+# DH2 and DH22 are too weak: https://tools.ietf.org/html/rfc8247#section-2.4
+# The others listed here are not broken, just not popular
 USE_SERPENT?=true
 USE_TWOFISH?=true
 USE_3DES?=true
+USE_DH2?=true /* very soon to be false */
 USE_DH22?=false
+USE_DH23?=false
+USE_DH24?=false
+USE_DH31?=true
 USE_CAMELLIA?=true
-USE_CAST?=true
+USE_CAST?=false
 USE_RIPEMD?=false
 
 # Do we want to limit the number of ipsec connections artificially
@@ -494,14 +459,6 @@ IPSECVIDVERSION:=$(shell echo ${IPSECVERSION} | sed 's/^\([^-]*\)-\([^-]*\)-.*/\
 export IPSECVIDVERSION
 endif
 
-# On MAC OSX , we have to use YACC and not BISON. And use different backup
-# file suffix.
-ifeq ($(BUILDENV),"darwin")
-USE_YACC?=true
-INSTBINFLAGS=-D -b -B .old
-INSTSUIDFLAGS=--mode=u+rxs,g+rx,o+rx --group=root -b -B .old
-endif
-
 OBJDIRTOP?=${LIBRESWANSRCDIR}/${OBJDIR}
 
 #
@@ -513,7 +470,6 @@ export OBJDIRTOP
 
 KLIPSINC=${LIBRESWANSRCDIR}/linux/include
 KLIPSSRCDIR=${LIBRESWANSRCDIR}/linux/net/ipsec
-#KLIPSSRCDIR=/mara1/git/klips/net/ipsec
 
 LIBSWANDIR=${LIBRESWANSRCDIR}/lib/libswan
 

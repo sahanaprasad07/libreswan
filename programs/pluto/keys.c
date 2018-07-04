@@ -904,11 +904,10 @@ const chunk_t *get_psk(const struct connection *c)
 
 /*
  * Return ppk, and store ppk_id in **ppk_id.
- * Store OTP filename in fn if the PPK is dynamic.
  *
- * ??? conditionally sets *ppk_id and *fn.  Should this be unconditional?
+ * ??? conditionally sets *ppk_id.  Should this be unconditional?
  */
-chunk_t *get_ppk(const struct connection *c, chunk_t **ppk_id, char **fn)
+chunk_t *get_ppk(const struct connection *c, chunk_t **ppk_id)
 {
 	struct secret *s = lsw_get_secret(c,
 					  &c->spd.this.id,
@@ -923,7 +922,6 @@ chunk_t *get_ppk(const struct connection *c, chunk_t **ppk_id, char **fn)
 			DBG_dump_chunk("PPK_ID:", **ppk_id);
 			DBG_dump_chunk("PPK:", pks->ppk);
 			});
-		*fn = pks->filename;
 		return &pks->ppk;
 	}
 
@@ -932,10 +930,9 @@ chunk_t *get_ppk(const struct connection *c, chunk_t **ppk_id, char **fn)
 
 /*
  * Find PPK, by its id (PPK_ID).
- * Store OTP filename in fn if the PPK is dynamic
  * Used by responder.
  */
-const chunk_t *get_ppk_by_id(const chunk_t *ppk_id, char **fn)
+const chunk_t *get_ppk_by_id(const chunk_t *ppk_id)
 {
 	struct secret *s = lsw_get_ppk_by_id(pluto_secrets, *ppk_id);
 
@@ -945,25 +942,12 @@ const chunk_t *get_ppk_by_id(const chunk_t *ppk_id, char **fn)
 			DBG_dump_chunk("Found PPK:", pks->ppk);
 			DBG_dump_chunk("with PPK_ID:", *ppk_id);
 		});
-		*fn = pks->filename;
-		DBG(DBG_CONTROL, DBG_log("In keys.c, checking OTP filename: %s", *fn));
 		return &pks->ppk;
 	}
 	DBG(DBG_CONTROL, {
 		DBG_log("No PPK found with given PPK_ID");
 	});
 	return NULL;
-}
-
-bool update_dynamic_ppk(char *fn)
-{
-	err_t ugh = lsw_update_dynamic_ppk_secret(fn);
-	if (ugh != NULL) {
-		DBG(DBG_CONTROL, DBG_log("ERROR: %s", ugh));
-		return FALSE;
-	} else {
-		return TRUE;
-	}
 }
 
 /*
@@ -1000,29 +984,7 @@ const struct RSA_private_key *get_RSA_private_key(const struct connection *c)
 
 /*
  * public key machinery
- * Note: caller must set dns_auth_level.
  */
-
-struct pubkey *public_key_from_rsa(const struct RSA_public_key *k)
-{
-	struct pubkey *p = alloc_thing(struct pubkey, "pubkey");
-
-	p->id = empty_id; /* don't know, doesn't matter */
-	p->issuer = empty_chunk;
-	p->alg = PUBKEY_ALG_RSA;
-
-	memcpy(p->u.rsa.keyid, k->keyid, sizeof(p->u.rsa.keyid));
-	p->u.rsa.k = k->k;
-	p->u.rsa.e = clone_chunk(k->e, "e");
-	p->u.rsa.n = clone_chunk(k->n, "n");
-
-	/* note that we return a 1 reference count upon creation:
-	 * invariant: recount > 0.
-	 */
-	p->refcnt = 1;
-	p->installed_time = realnow();
-	return p;
-}
 
 /* root of chained public key list */
 

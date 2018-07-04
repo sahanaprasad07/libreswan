@@ -49,7 +49,7 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/resource.h>
-#include <sys/wait.h>
+#include <sys/wait.h>		/* for wait() and WIFEXITED() et.al. */
 #include <resolv.h>
 
 #include <event2/event.h>
@@ -201,7 +201,7 @@ enum seccomp_mode pluto_seccomp_mode = SECCOMP_DISABLED;
 #endif
 unsigned int pluto_max_halfopen = DEFAULT_MAXIMUM_HALFOPEN_IKE_SA;
 unsigned int pluto_ddos_threshold = DEFAULT_IKE_SA_DDOS_THRESHOLD;
-deltatime_t pluto_shunt_lifetime = DELTATIME(PLUTO_SHUNT_LIFE_DURATION_DEFAULT);
+deltatime_t pluto_shunt_lifetime = DELTATIME_INIT(PLUTO_SHUNT_LIFE_DURATION_DEFAULT);
 
 unsigned int pluto_sock_bufsize = IKE_BUF_AUTO; /* use system values */
 bool pluto_sock_errqueue = TRUE; /* Enable MSG_ERRQUEUE on IKE socket */
@@ -330,7 +330,7 @@ int create_socket(struct raw_iface *ifp, const char *v_name, int port)
 
 	if (setsockopt(fd, SOL_SOCKET, SO_PRIORITY,
 			(const void *)&so_prio, sizeof(so_prio)) < 0) {
-                LOG_ERRNO(errno, "setsockopt(SO_PRIORITY) in find_raw_ifaces4()");
+		LOG_ERRNO(errno, "setsockopt(SO_PRIORITY) in find_raw_ifaces4()");
 		/* non-fatal */
 	}
 
@@ -509,10 +509,10 @@ void link_pluto_event_list(struct pluto_event *e) {
 
 void delete_pluto_event(struct pluto_event **evp)
 {
-        if (*evp == NULL) {
-                DBG(DBG_CONTROLMORE, DBG_log("%s cannot delete NULL event", __func__));
-                return;
-        }
+	if (*evp == NULL) {
+		DBG(DBG_CONTROLMORE, DBG_log("%s cannot delete NULL event", __func__));
+		return;
+	}
 
 	unlink_pluto_event_list(evp);
 }
@@ -617,7 +617,7 @@ void pluto_event_now(const char *name, so_serial_t serialno,
 	 * Everything set up; arm and fire torpedo.  Event may have
 	 * even run before the below function returns.
 	 */
-	static const deltatime_t no_delay = DELTATIME(0);
+	static const deltatime_t no_delay = DELTATIME_INIT(0);
 	fire_event_photon_torpedo(&ne->ne_event,
 				  NULL_FD, EV_TIMEOUT,
 				  schedule_event_now_cb, ne,
@@ -912,9 +912,9 @@ static void addconn_exited(struct state *null_st UNUSED,
 			   struct msg_digest **null_mdp UNUSED,
 			   int status, void *context UNUSED)
 {
-       DBG(DBG_CONTROLMORE,
-           DBG_log("reaped addconn helper child (status %d)", status));
-       addconn_child_pid = 0;
+	DBG(DBG_CONTROLMORE,
+	   DBG_log("reaped addconn helper child (status %d)", status));
+	addconn_child_pid = 0;
 }
 
 static void log_status(struct lswlog *buf, int status)
@@ -1493,18 +1493,18 @@ bool check_incoming_msg_errqueue(const struct iface_port *ifp UNUSED,
 				 const char *before UNUSED)
 {
 #if defined(IP_RECVERR) && defined(MSG_ERRQUEUE)
-       return check_msg_errqueue(ifp, POLLIN, before);
+	return check_msg_errqueue(ifp, POLLIN, before);
 #else
-       return true;
-#endif  /* defined(IP_RECVERR) && defined(MSG_ERRQUEUE) */
+	return true;
+#endif	/* defined(IP_RECVERR) && defined(MSG_ERRQUEUE) */
 }
 
 void check_outgoing_msg_errqueue(const struct iface_port *ifp UNUSED,
 				 const char *before UNUSED)
 {
 #if defined(IP_RECVERR) && defined(MSG_ERRQUEUE)
-       (void) check_msg_errqueue(ifp, POLLOUT, before);
-#endif  /* defined(IP_RECVERR) && defined(MSG_ERRQUEUE) */
+	(void) check_msg_errqueue(ifp, POLLOUT, before);
+#endif	/* defined(IP_RECVERR) && defined(MSG_ERRQUEUE) */
 }
 
 bool should_fragment_ike_msg(struct state *st, size_t len, bool resending)

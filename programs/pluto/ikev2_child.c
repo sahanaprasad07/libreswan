@@ -247,9 +247,9 @@ stf_status ikev2_emit_ts_payloads(struct child_sa *child, pb_stream *outpbs,
 	 *   value - the loop control variable SR is never referenced
 	 *
 	 * - should multiple traffic selector payload be emitted then
-         *   the next payload type for all but the last v2TSr payload
-         *   will be wrong - it is always set to the type of the
-         *   payload after these
+	 *   the next payload type for all but the last v2TSr payload
+	 *   will be wrong - it is always set to the type of the
+	 *   payload after these
 	 */
 
 	for (const struct spd_route *sr = &c0->spd; sr != NULL;
@@ -292,21 +292,13 @@ int ikev2_parse_ts(struct payload_digest *const ts_pd,
 		switch (ts1.isat1_type) {
 		case IKEv2_TS_IPV4_ADDR_RANGE:
 			array[i].ts_type = IKEv2_TS_IPV4_ADDR_RANGE;
-			array[i].net.start.u.v4.sin_family = AF_INET;
-#ifdef NEED_SIN_LEN
-			array[i].net.start.u.v4.sin_len =
-				sizeof(struct sockaddr_in);
-#endif
+			SET_V4(array[i].net.start);
 			if (!in_raw(&array[i].net.start.u.v4.sin_addr.s_addr,
 				    sizeof(array[i].net.start.u.v4.sin_addr.s_addr),
 				    &addr, "ipv4 ts low"))
 				return -1;
 
-			array[i].net.end.u.v4.sin_family = AF_INET;
-#ifdef NEED_SIN_LEN
-			array[i].net.end.u.v4.sin_len =
-				sizeof(struct sockaddr_in);
-#endif
+			SET_V4(array[i].net.end);
 
 			if (!in_raw(&array[i].net.end.u.v4.sin_addr.s_addr,
 				    sizeof(array[i].net.end.u.v4.sin_addr.s_addr),
@@ -317,22 +309,14 @@ int ikev2_parse_ts(struct payload_digest *const ts_pd,
 
 		case IKEv2_TS_IPV6_ADDR_RANGE:
 			array[i].ts_type = IKEv2_TS_IPV6_ADDR_RANGE;
-			array[i].net.start.u.v6.sin6_family = AF_INET6;
-#ifdef NEED_SIN_LEN
-			array[i].net.start.u.v6.sin6_len =
-				sizeof(struct sockaddr_in6);
-#endif
+			SET_V6(array[i].net.start);
 
 			if (!in_raw(&array[i].net.start.u.v6.sin6_addr.s6_addr,
 				    sizeof(array[i].net.start.u.v6.sin6_addr.s6_addr),
 				    &addr, "ipv6 ts low"))
 				return -1;
 
-			array[i].net.end.u.v6.sin6_family = AF_INET6;
-#ifdef NEED_SIN_LEN
-			array[i].net.end.u.v6.sin6_len =
-				sizeof(struct sockaddr_in6);
-#endif
+			SET_V6(array[i].net.end);
 
 			if (!in_raw(&array[i].net.end.u.v6.sin6_addr.s6_addr,
 				    sizeof(array[i].net.end.u.v6.sin6_addr.s6_addr),
@@ -393,6 +377,8 @@ static int ikev2_match_protocol(u_int8_t proto, u_int8_t ts_proto,
 /*
  * returns -1 on no match; otherwise a weight of how great the match was.
  * *best_tsi_i and *best_tsr_i are set if there was a match.
+ * Almost identical to ikev2_evaluate_connection_port_fit:
+ * any change should be done to both.
  */
 int ikev2_evaluate_connection_protocol_fit(const struct connection *d,
 					   const struct spd_route *sr,
@@ -407,7 +393,7 @@ int ikev2_evaluate_connection_protocol_fit(const struct connection *d,
 	int tsi_ni;
 	int bestfit_pr = -1;
 	const struct end *ei, *er;
-	bool narrowing = (d->policy & POLICY_IKEV2_ALLOW_NARROWING);
+	bool narrowing = (d->policy & POLICY_IKEV2_ALLOW_NARROWING) != LEMPTY;
 
 	if (role == ORIGINAL_INITIATOR) {
 		ei = &sr->this;
@@ -435,12 +421,10 @@ int ikev2_evaluate_connection_protocol_fit(const struct connection *d,
 				role == ORIGINAL_INITIATOR && narrowing,
 				"tsr", tsr_ni);
 
-			int matchiness;
-
 			if (fitrange_r == 0)
 				continue;	/* save effort! */
 
-			matchiness = fitrange_i + fitrange_r;	/* ??? arbitrary objective function */
+			int matchiness = fitrange_i + fitrange_r;	/* ??? arbitrary objective function */
 
 			if (matchiness > bestfit_pr) {
 				*best_tsi_i = tsi_ni;
@@ -500,6 +484,8 @@ static int ikev2_match_port_range(u_int16_t port, struct traffic_selector ts,
 /*
  * returns -1 on no match; otherwise a weight of how great the match was.
  * *best_tsi_i and *best_tsr_i are set if there was a match.
+ * Almost identical to ikev2_evaluate_connection_protocol_fit:
+ * any change should be done to both.
  */
 int ikev2_evaluate_connection_port_fit(const struct connection *d,
 				       const struct spd_route *sr,
@@ -514,7 +500,7 @@ int ikev2_evaluate_connection_port_fit(const struct connection *d,
 	int tsi_ni;
 	int bestfit_p = -1;
 	const struct end *ei, *er;
-	bool narrowing = (d->policy & POLICY_IKEV2_ALLOW_NARROWING);
+	bool narrowing = (d->policy & POLICY_IKEV2_ALLOW_NARROWING) != LEMPTY;
 
 	if (role == ORIGINAL_INITIATOR) {
 		ei = &sr->this;
@@ -527,6 +513,7 @@ int ikev2_evaluate_connection_port_fit(const struct connection *d,
 	/* ??? stupid n**2 algorithm */
 	for (tsi_ni = 0; tsi_ni < tsi_n; tsi_ni++) {
 		int tsr_ni;
+
 		int fitrange_i = ikev2_match_port_range(ei->port, tsi[tsi_ni],
 			role == ORIGINAL_RESPONDER && narrowing,
 			role == ORIGINAL_INITIATOR && narrowing,
@@ -541,12 +528,10 @@ int ikev2_evaluate_connection_port_fit(const struct connection *d,
 				role == ORIGINAL_INITIATOR && narrowing,
 				"tsr", tsr_ni);
 
-			int matchiness;
-
 			if (fitrange_r == 0)
 				continue;	/* no match */
 
-			matchiness = fitrange_i + fitrange_r;	/* ??? arbitrary objective function */
+			int matchiness = fitrange_i + fitrange_r;	/* ??? arbitrary objective function */
 
 			if (matchiness > bestfit_p) {
 				*best_tsi_i = tsi_ni;
@@ -881,8 +866,8 @@ stf_status ikev2_resp_accept_child_ts(
 						int bfit_pr =
 							ikev2_evaluate_connection_protocol_fit(
 								d, sra, role,
-								tsi, tsr, tsi_n,
-								tsr_n,
+								tsi, tsr,
+								tsi_n, tsr_n,
 								&best_tsi_i,
 								&best_tsr_i);
 
@@ -899,13 +884,13 @@ stf_status ikev2_resp_accept_child_ts(
 							bsr = sr;
 						} else {
 							DBG(DBG_CONTROLMORE,
-							    DBG_log("protocol fitness rejected d %s c->name",
+							    DBG_log("protocol fitness rejected d %s",
 								    d->name));
 						}
 					} else {
 						DBG(DBG_CONTROLMORE,
-								DBG_log("port fitness rejected d %s c->name",
-									c->name));
+							DBG_log("port fitness rejected d %s",
+								d->name));
 					}
 
 				} else {
@@ -922,20 +907,33 @@ stf_status ikev2_resp_accept_child_ts(
 	}
 
 	if (bsr == NULL) {
-		DBG(DBG_CONTROLMORE, DBG_log("failed to find anything, can we instantiate another template?"));
+		DBG(DBG_CONTROLMORE, DBG_log("failed to find anything; can we instantiate another template?"));
 
 		for (struct connection *t = connections; t != NULL; t = t->ac_next) {
 
 			if (LIN(POLICY_GROUPINSTANCE, t->policy) && (t->kind == CK_TEMPLATE)) {
-				if ((!streq(t->foodgroup, best->foodgroup)) ||
-					(streq(best->name, t->name)) ||
-					(!subnetinsubnet(&best->spd.that.client, &t->spd.that.client)) ||
-					(!sameaddr(&best->spd.this.client.addr, &t->spd.this.client.addr)))
-						continue;
+				/* ??? clang 6.0.0 thinks best might be NULL but I don't see how */
+				if (!streq(t->foodgroup, best->foodgroup) ||
+				    streq(best->name, t->name) ||
+				    !subnetinsubnet(&best->spd.that.client, &t->spd.that.client) ||
+				    !sameaddr(&best->spd.this.client.addr, &t->spd.this.client.addr))
+					continue;
 
-				DBG(DBG_CONTROLMORE, DBG_log("investigate %s which is another group instance of %s with different protoports", t->name, t->foodgroup));
+				/* ??? why require best->name and t->name to be different */
+
+				DBG(DBG_CONTROLMORE,
+					DBG_log("investigate %s which is another group instance of %s with different protoports",
+						t->name, t->foodgroup));
+				/*
+				 * ??? this code seems to assume that tsi and tsr contain exactly one element.
+				 * Any fewer and the code references an uninitialized value.
+				 * Any more would be ignored, and that's surely wrong.
+				 * It would be nice if the purpose of this block of code were documented.
+				 */
+				pexpect(tsi_n == 1);
 				int t_sport = tsi[0].startport == tsi[0].endport ? tsi[0].startport :
 						tsi[0].startport == 0 && tsi[0].endport == 65535 ? 0 : -1;
+				pexpect(tsr_n == 1);
 				int t_dport = tsr[0].startport == tsr[0].endport ? tsr[0].startport :
 						tsr[0].startport == 0 && tsr[0].endport == 65535 ? 0 : -1;
 
@@ -985,6 +983,8 @@ stf_status ikev2_resp_accept_child_ts(
 	}
 
 	if (role == ORIGINAL_INITIATOR) {
+		pexpect(best_tsi_i >= 0);
+		pexpect(best_tsr_i >= 0);	/* ??? Coverity thinks that this might fail */
 		cst->st_ts_this = tsi[best_tsi_i];
 		cst->st_ts_that = tsr[best_tsr_i];
 	} else {
@@ -1048,11 +1048,11 @@ stf_status ikev2_child_sa_respond(struct msg_digest *md,
 	 * calls:
 	 *
 	 * - in the original responder's AUTH code so
-         *   ORIGINAL_RESPONDER is correct
+	 *   ORIGINAL_RESPONDER is correct
 	 *
 	 * - CHILD_SA reply code (?), since either end can send such a
-         *   request, the end's original role may not be
-         *   ORIGINAL_RESPONDER.
+	 *   request, the end's original role may not be
+	 *   ORIGINAL_RESPONDER.
 	 *
 	 * Looking at the code:
 	 *
@@ -1325,7 +1325,12 @@ stf_status ikev2_child_sa_respond(struct msg_digest *md,
 	 * we should do this after installing ipsec_sa, but that will
 	 * give us a "eroute in use" error.
 	 */
-       ISAKMP_SA_established(pst);
+	if (isa_xchg == ISAKMP_v2_CREATE_CHILD_SA) {
+		/* skip check for rekey */
+		pst->st_connection->newest_isakmp_sa = pst->st_serialno;
+	} else {
+		ISAKMP_SA_established(pst);
+	}
 
 	/* install inbound and outbound SPI info */
 	if (!install_ipsec_sa(cst, TRUE))
@@ -1476,7 +1481,7 @@ bool ikev2_parse_cp_r_body(struct payload_digest *cp_pd, struct state *st)
 		loglog(RC_LOG_SERIOUS, "ERROR expected IKEv2_CP_CFG_REQUEST got a %s",
 			enum_name(&ikev2_cp_type_names,cp->isacp_type));
 		return FALSE;
-       }
+	}
 
 	while (pbs_left(attrs) > 0) {
 		struct ikev2_cp_attribute cp_a;

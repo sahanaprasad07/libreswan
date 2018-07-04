@@ -120,6 +120,7 @@ static const char *const timer_event_name[] = {
 	"EVENT_PENDING_DDNS",
 	"EVENT_SD_WATCHDOG",
 	"EVENT_PENDING_PHASE2",
+	"EVENT_CHECK_CRLS",
 
 	"EVENT_SO_DISCARD",
 	"EVENT_v1_RETRANSMIT",
@@ -467,16 +468,13 @@ static const char *const policy_fail_names[4] = {
 };
 
 static const char *const dns_auth_level_name[] = {
-	"DNSSEC_UNKNOWN",
-	"DNSSEC_BOGUS",
-	"DNSSEC_INSECURE",
 	"PUBKEY_LOCAL",
+	"DNSSEC_INSECURE",
 	"DNSSEC_SECURE",
-	"DNSSEC_ROOF",
 };
 
 enum_names dns_auth_level_names = {
-	DNSSEC_UNKNOWN, DNSSEC_ROOF,
+	PUBKEY_LOCAL, DNSSEC_ROOF-1,
 	ARRAY_REF(dns_auth_level_name),
 	NULL, /* prefix */
 	NULL
@@ -500,10 +498,10 @@ const char *prettypolicy(lset_t policy)
 		pbitnamesbuf[0] = '\0';
 	snprintf(buf, sizeof(buf), "%s%s%s%s%s",
 		 pbitnamesbuf,
-		 shunt != 0 ? "+" : "",
-		 shunt != 0 ? policy_shunt_names[shunt] : "",
-		 fail != 0 ? "+failure" : "",
-		 fail != 0 ? policy_fail_names[fail] : "");
+		 shunt == POLICY_SHUNT_TRAP >> POLICY_SHUNT_SHIFT ?  "" : "+",
+		 shunt ==  POLICY_SHUNT_TRAP >> POLICY_SHUNT_SHIFT ? "" : policy_shunt_names[shunt],
+		 fail == POLICY_FAIL_NONE >> POLICY_FAIL_SHIFT ? "" : "+failure",
+		 fail == POLICY_FAIL_NONE >> POLICY_FAIL_SHIFT ? "" : policy_fail_names[fail]);
 	return buf;
 }
 

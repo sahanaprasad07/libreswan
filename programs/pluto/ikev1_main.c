@@ -95,6 +95,7 @@
  * --> HDR;SA
  * Note: this is not called from demux.c
  */
+/* extern initiator_function main_outI1; */	/* type assertion */
 void main_outI1(int whack_sock,
 		struct connection *c,
 		struct state *predecessor,
@@ -116,7 +117,7 @@ void main_outI1(int whack_sock,
 	if (c->policy & POLICY_IKE_FRAG_ALLOW)
 		numvidtosend++;
 
-	if (nat_traversal_enabled && c->ikev1_natt != natt_none)
+	if (nat_traversal_enabled && c->ikev1_natt != NATT_NONE)
 		numvidtosend++;
 
 	if (c->cisco_unity) {
@@ -262,7 +263,7 @@ void main_outI1(int whack_sock,
 		}
 	}
 
-	if (nat_traversal_enabled && c->ikev1_natt != natt_none) {
+	if (nat_traversal_enabled && c->ikev1_natt != NATT_NONE) {
 		int np = --numvidtosend > 0 ?
 			ISAKMP_NEXT_VID : ISAKMP_NEXT_NONE;
 
@@ -1252,13 +1253,16 @@ stf_status main_inI2_outR2_continue1_tail(struct state *st, struct msg_digest *m
 
 				for (gn = ca; gn != NULL; gn = gn->next) {
 					if (!ikev1_build_and_ship_CR(
-							CERT_X509_SIGNATURE,
-							gn->name,
-							&rbody,
-							gn->next ==NULL ?
-							  ISAKMP_NEXT_NONE :
-							  ISAKMP_NEXT_CR))
+						CERT_X509_SIGNATURE,
+						gn->name,
+						&rbody,
+						gn->next ==NULL ?
+							ISAKMP_NEXT_NONE :
+							ISAKMP_NEXT_CR))
+					{
+						free_generalNames(ca, FALSE);
 						return STF_INTERNAL_ERROR;
+					}
 				}
 				free_generalNames(ca, FALSE);
 			} else {
@@ -1352,9 +1356,9 @@ static stf_status main_inR2_outI3_continue_tail(struct msg_digest *md,
 	 */
 	send_cert = st->st_oakley.auth == OAKLEY_RSA_SIG &&
 		mycert.ty != CERT_NONE && mycert.u.nss_cert != NULL &&
-		((st->st_connection->spd.this.sendcert == cert_sendifasked &&
+		((st->st_connection->spd.this.sendcert == CERT_SENDIFASKED &&
 		  st->hidden_variables.st_got_certrequest) ||
-		 st->st_connection->spd.this.sendcert == cert_alwayssend);
+		 st->st_connection->spd.this.sendcert == CERT_ALWAYSSEND);
 
 	send_authcerts = (send_cert &&
 			  st->st_connection->send_ca != CA_SEND_NONE);
@@ -1737,9 +1741,9 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
 
 	send_cert = st->st_oakley.auth == OAKLEY_RSA_SIG &&
 		mycert.ty != CERT_NONE && mycert.u.nss_cert != NULL &&
-		((st->st_connection->spd.this.sendcert == cert_sendifasked &&
+		((st->st_connection->spd.this.sendcert == CERT_SENDIFASKED &&
 		  st->hidden_variables.st_got_certrequest) ||
-		 st->st_connection->spd.this.sendcert == cert_alwayssend);
+		 st->st_connection->spd.this.sendcert == CERT_ALWAYSSEND);
 
 	send_authcerts = (send_cert &&
 			  st->st_connection->send_ca != CA_SEND_NONE);
@@ -1936,7 +1940,7 @@ stf_status main_inI3_outR3(struct state *st, struct msg_digest *md)
  *
  */
 
-static state_transition_fn main_inR3_tail;
+static ikev1_state_transition_fn main_inR3_tail;
 
 stf_status main_inR3(struct state *st, struct msg_digest *md)
 {
@@ -2011,8 +2015,7 @@ static stf_status main_inR3_tail(struct state *st, struct msg_digest *md)
 			/* schedule an event to do this as soon as possible */
 			md->event_already_set = TRUE;
 			st->st_rekeytov2 = TRUE;
-			delete_event(st);
-			event_schedule_s(EVENT_SA_REPLACE, 0, st);
+			event_force(EVENT_SA_REPLACE, st);
 		}
 	}
 
@@ -2570,7 +2573,7 @@ bool accept_delete(struct msg_digest *md,
 	if (!md->encrypted) {
 		loglog(RC_LOG_SERIOUS,
 			"ignoring Delete SA payload: not encrypted");
-		return self_delete;
+		return FALSE;
 	}
 
 	/* If there is no SA related to this request, but it was encrypted */
@@ -2578,12 +2581,12 @@ bool accept_delete(struct msg_digest *md,
 		/* can't happen (if msg is encrypt), but just to be sure */
 		loglog(RC_LOG_SERIOUS,
 			"ignoring Delete SA payload: ISAKMP SA not established");
-		return self_delete;
+		return FALSE;
 	}
 
 	if (d->isad_nospi == 0) {
 		loglog(RC_LOG_SERIOUS, "ignoring Delete SA payload: no SPI");
-		return self_delete;
+		return FALSE;
 	}
 
 	switch (d->isad_protoid) {
@@ -2598,13 +2601,13 @@ bool accept_delete(struct msg_digest *md,
 
 	case PROTO_IPCOMP:
 		/* nothing interesting to delete */
-		return self_delete;
+		return FALSE;
 
 	default:
 		loglog(RC_LOG_SERIOUS,
 			"ignoring Delete SA payload: unknown Protocol ID (%s)",
 			enum_show(&ikev1_protocol_names, d->isad_protoid));
-		return self_delete;
+		return FALSE;
 	}
 
 	if (d->isad_spisize != sizespi) {
@@ -2612,13 +2615,13 @@ bool accept_delete(struct msg_digest *md,
 			"ignoring Delete SA payload: bad SPI size (%d) for %s",
 			d->isad_spisize,
 			enum_show(&ikev1_protocol_names, d->isad_protoid));
-		return self_delete;
+		return FALSE;
 	}
 
 	if (pbs_left(&p->pbs) != d->isad_nospi * sizespi) {
 		loglog(RC_LOG_SERIOUS,
 			"ignoring Delete SA payload: invalid payload size");
-		return self_delete;
+		return FALSE;
 	}
 
 	for (i = 0; i < d->isad_nospi; i++) {
@@ -2631,10 +2634,10 @@ bool accept_delete(struct msg_digest *md,
 			struct state *dst;
 
 			if (!in_raw(icookie, COOKIE_SIZE, &p->pbs, "iCookie"))
-				return self_delete;
+				return FALSE;
 
 			if (!in_raw(rcookie, COOKIE_SIZE, &p->pbs, "rCookie"))
-				return self_delete;
+				return FALSE;
 
 			dst = find_state_ikev1(icookie, rcookie,
 					v1_MAINMODE_MSGID);
@@ -2659,7 +2662,7 @@ bool accept_delete(struct msg_digest *md,
 				/* note: this code is cloned for handling self_delete */
 				loglog(RC_LOG_SERIOUS, "received Delete SA payload: deleting ISAKMP State #%lu",
 					dst->st_serialno);
-				if (nat_traversal_enabled && dst->st_connection->ikev1_natt != natt_none)
+				if (nat_traversal_enabled && dst->st_connection->ikev1_natt != NATT_NONE)
 					nat_traversal_change_port_lookup(md, dst);
 				delete_state(dst);
 			}
@@ -2670,7 +2673,7 @@ bool accept_delete(struct msg_digest *md,
 			ipsec_spi_t spi;	/* network order */
 
 			if (!in_raw(&spi, sizeof(spi), &p->pbs, "SPI"))
-				return self_delete;
+				return FALSE;
 
 			bool bogus;
 			struct state *dst = find_phase2_state_to_delete(st,
@@ -2697,7 +2700,7 @@ bool accept_delete(struct msg_digest *md,
 				struct connection *rc = dst->st_connection;
 				struct connection *oldc = push_cur_connection(rc);
 
-				if (nat_traversal_enabled && dst->st_connection->ikev1_natt != natt_none)
+				if (nat_traversal_enabled && dst->st_connection->ikev1_natt != NATT_NONE)
 					nat_traversal_change_port_lookup(md, dst);
 
 				if (rc->newest_ipsec_sa == dst->st_serialno &&
@@ -2732,8 +2735,7 @@ bool accept_delete(struct msg_digest *md,
 							"received Delete SA payload: replace IPSEC State #%lu now",
 							dst->st_serialno);
 						dst->st_margin = deltatime(0);
-						delete_event(dst);
-						event_schedule_s(EVENT_SA_REPLACE, 0, dst);
+						event_force(EVENT_SA_REPLACE, dst);
 					}
 				} else {
 					loglog(RC_LOG_SERIOUS,
@@ -2770,7 +2772,7 @@ void accept_self_delete(struct msg_digest *md)
 	/* note: this code is cloned from handling ISAKMP non-self_delete */
 	loglog(RC_LOG_SERIOUS, "received Delete SA payload: self-deleting ISAKMP State #%lu",
 		st->st_serialno);
-	if (nat_traversal_enabled && st->st_connection->ikev1_natt != natt_none)
+	if (nat_traversal_enabled && st->st_connection->ikev1_natt != NATT_NONE)
 		nat_traversal_change_port_lookup(md, st);
 	delete_state(st);
 	md->st = st = NULL;

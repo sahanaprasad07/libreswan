@@ -62,6 +62,7 @@
 #include "nat_traversal.h"
 #include "pluto_sd.h"
 #include "retry.h"
+#include "fetch.h"		/* for check_crls() */
 
 /*
  * This file has the event handling routines. Events are
@@ -135,10 +136,10 @@ static void liveness_check(struct state *st)
 	 * If we are a lingering (replaced) IPsec SA, don't do liveness
 	 */
 	if (pst->st_connection->newest_ipsec_sa != st->st_serialno) {
-               DBG(DBG_DPD,
-                   DBG_log("liveness: no need to send or schedule DPD for replaced IPsec SA"));
-               return;
-       }
+		DBG(DBG_DPD,
+		   DBG_log("liveness: no need to send or schedule DPD for replaced IPsec SA"));
+		return;
+	}
 
 	/*
 	 * don't bother sending the check and reset
@@ -211,6 +212,29 @@ static void liveness_check(struct state *st)
 	event_schedule(EVENT_v2_LIVENESS, delay, st);
 }
 
+static void ikev2_log_initiate_child_fail(const struct state *st)
+{
+	const struct state *pst = state_with_serialno(st->st_clonedfrom);
+
+	if (pst == NULL)
+		return;
+
+	msgid_t unack = pst->st_msgid_nextuse - pst->st_msgid_lastack - 1;
+
+	if (st->st_state == STATE_V2_REKEY_IKE_I0 ||
+			st->st_state == STATE_V2_REKEY_CHILD_I0 ||
+			st->st_state == STATE_V2_CREATE_I0) {
+
+		if (unack < st->st_connection->ike_window) {
+			loglog(RC_LOG_SERIOUS, "expiring %s state. Possible message id dealock? parent #%lu unacknowledged %u next message id=%u ike exchange window %u",
+					st->st_state_name,
+					pst->st_serialno, unack,
+					pst->st_msgid_nextuse,
+					pst->st_connection->ike_window);
+		}
+	}
+}
+
 static void ikev2_log_v2_sa_expired(struct state *st, enum event_type type)
 {
 	DBG(DBG_LIFECYCLE, {
@@ -251,8 +275,7 @@ static void ikev2_expire_parent(struct state *st, deltatime_t last_used_age)
 			deltasecs(c->sa_rekey_margin),
 			pst->st_serialno));
 
-	delete_event(pst);
-	event_schedule_s(EVENT_SA_EXPIRE, 0, pst);
+	event_force(EVENT_SA_EXPIRE, pst);
 }
 
 /*
@@ -260,7 +283,7 @@ static void ikev2_expire_parent(struct state *st, deltatime_t last_used_age)
  */
 void delete_state_event(struct state *st, struct pluto_event **evp)
 {
-        struct pluto_event *ev = *evp;
+	struct pluto_event *ev = *evp;
 	DBG(DBG_DPD | DBG_CONTROL,
 	    const char *en = ev ? enum_name(&timer_event_names, ev->ev_type) : "N/A";
 	    DBG_log("state #%lu requesting %s-pe@%p be deleted",
@@ -310,6 +333,7 @@ static void timer_event_cb(evutil_socket_t fd UNUSED, const short event UNUSED, 
 	case EVENT_PENDING_PHASE2:
 	case EVENT_SD_WATCHDOG:
 	case EVENT_NAT_T_KEEPALIVE:
+	case EVENT_CHECK_CRLS:
 		passert(st == NULL);
 		break;
 
@@ -407,6 +431,10 @@ static void timer_event_cb(evutil_socket_t fd UNUSED, const short event UNUSED, 
 		nat_traversal_ka_event();
 		break;
 
+	case EVENT_CHECK_CRLS:
+		check_crls();
+		break;
+
 	case EVENT_v2_RELEASE_WHACK:
 		DBG(DBG_CONTROL, DBG_log("%s releasing whack for #%lu %s (sock=%d)",
 					enum_show(&timer_event_names, type),
@@ -486,13 +514,12 @@ static void timer_event_cb(evutil_socket_t fd UNUSED, const short event UNUSED, 
 					deltaless(c->sa_rekey_margin, last_used_age))
 				{
 					delete_liveness_event(cst);
-					delete_event(cst);
-					event_schedule_s(EVENT_SA_EXPIRE, 0, cst);
+					event_force(EVENT_SA_EXPIRE, cst);
 					ikev2_expire_parent(cst, last_used_age);
 					break;
 				} else {
 					ikev2_log_v2_sa_expired(st, type);
-					ipsecdoi_replace(st, LEMPTY, LEMPTY, 1);
+					ipsecdoi_replace(st, 1);
 				}
 
 		} else if (type == EVENT_SA_REPLACE_IF_USED &&
@@ -519,10 +546,10 @@ static void timer_event_cb(evutil_socket_t fd UNUSED, const short event UNUSED, 
 					deltasecs(monotimediff(mononow(),
 							       st->st_outbound_time))));
 		} else {
+			ikev2_log_initiate_child_fail(st);
 			ikev2_log_v2_sa_expired(st, type);
-			ipsecdoi_replace(st, LEMPTY, LEMPTY, 1);
+			ipsecdoi_replace(st, 1);
 		}
-
 
 		delete_liveness_event(st);
 		delete_dpd_event(st);
@@ -761,5 +788,12 @@ void event_schedule(enum event_type type, deltatime_t delay, struct state *st)
 void event_schedule_s(enum event_type type, time_t delay_sec, struct state *st)
 {
 	deltatime_t delay = deltatime(delay_sec);
+	event_schedule(type, delay, st);
+}
+
+void event_force(enum event_type type, struct state *st)
+{
+	delete_event(st);
+	deltatime_t delay = deltatime(0);
 	event_schedule(type, delay, st);
 }

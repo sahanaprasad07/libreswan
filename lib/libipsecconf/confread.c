@@ -11,7 +11,7 @@
  * Copyright (C) 2012 Antony Antony <antony@phenome.org>
  * Copyright (C) 2013 Florian Weimer <fweimer@redhat.com>
  * Copyright (C) 2013 David McCullough <ucdevel@gmail.com>
- * Copyright (C) 2013 D. Hugh Redelmeier <hugh@mimosa.com>
+ * Copyright (C) 2013,2018 D. Hugh Redelmeier <hugh@mimosa.com>
  * Copyright (C) 2016 Andrew Cagney <cagney@gnu.org>
  * Copyright (C) 2017 Vukasin Karadzic <vukasin.karadzic@gmail.com>
  *
@@ -130,8 +130,8 @@ void ipsecconf_default_values(struct starter_config *cfg)
 
 	cfg->conn_default.options[KBF_IKEPAD] = TRUE;
 
-	cfg->conn_default.options[KBF_IKEV1_NATT] = natt_both;
-	cfg->conn_default.options[KBF_ENCAPS] = encaps_auto;
+	cfg->conn_default.options[KBF_IKEV1_NATT] = NATT_BOTH;
+	cfg->conn_default.options[KBF_ENCAPS] = yna_auto;
 
 	/* Network Manager support */
 #ifdef HAVE_NM
@@ -153,7 +153,7 @@ void ipsecconf_default_values(struct starter_config *cfg)
 		POLICY_IKE_FRAG_ALLOW |      /* ike_frag=yes */
 		POLICY_ESN_NO;      	     /* esn=no */
 
-	cfg->conn_default.options[KBF_NIC_OFFLOAD] = nic_offload_auto;
+	cfg->conn_default.options[KBF_NIC_OFFLOAD] = yna_auto;
 	cfg->conn_default.options[KBF_IKELIFETIME] = IKE_SA_LIFETIME_DEFAULT;
 
 	cfg->conn_default.options[KBF_REPLAY_WINDOW] = IPSEC_SA_DEFAULT_REPLAY_WINDOW;
@@ -167,11 +167,8 @@ void ipsecconf_default_values(struct starter_config *cfg)
 
 	cfg->conn_default.options[KBF_KEYINGTRIES] = SA_REPLACEMENT_RETRIES_DEFAULT;
 
-	cfg->conn_default.options[KBF_CONNADDRFAMILY] = AF_INET;
-
-	/* set default updown script */
-	cfg->conn_default.left.updown = clone_str(DEFAULT_UPDOWN, "default updown str");
-	cfg->conn_default.right.updown = clone_str(DEFAULT_UPDOWN, "default updown str");
+	cfg->conn_default.options[KBF_HOSTADDRFAMILY] = AF_UNSPEC;
+	cfg->conn_default.options[KBF_CLIENTADDRFAMILY] = AF_UNSPEC;
 
 	cfg->conn_default.left.addr_family = AF_INET;
 	anyaddr(AF_INET, &cfg->conn_default.left.addr);
@@ -415,8 +412,26 @@ static bool validate_end(struct starter_conn *conn_st,
 {
 	err_t er = NULL;
 	char *err_str = NULL;
-	int family = conn_st->options[KBF_CONNADDRFAMILY];
+	int hostfam = conn_st->options[KBF_HOSTADDRFAMILY];
 	bool err = FALSE;
+
+	/*
+	 * TODO:
+	 * The address family default should come in either via
+	 * a config setup option, or via gai.conf / RFC3484
+	 * For now, %defaultroute and %any means IPv4 only
+	 */
+	if (hostfam == AF_UNSPEC) {
+		hostfam = AF_INET;
+
+		if (end->strings[KNCF_IP] != NULL &&
+			(strchr(end->strings[KSCF_IP], ':') != NULL ||
+			streq(end->strings[KSCF_IP], "%defaultroute6") ||
+			streq(end->strings[KSCF_IP], "%any6")))
+		{
+			hostfam = AF_INET6;
+		}
+	}
 
 #  define ERR_FOUND(...) { error_append(&err_str, __VA_ARGS__); err = TRUE; }
 
@@ -424,12 +439,12 @@ static bool validate_end(struct starter_conn *conn_st,
 		conn_st->state = STATE_INCOMPLETE;
 
 	end->addrtype = end->options[KNCF_IP];
-	end->addr_family = family;
+	end->addr_family = hostfam;
 
 	/* validate the KSCF_IP/KNCF_IP */
 	switch (end->addrtype) {
 	case KH_ANY:
-		anyaddr(family, &end->addr);
+		anyaddr(hostfam, &end->addr);
 		break;
 
 	case KH_IFACE:
@@ -443,7 +458,7 @@ static bool validate_end(struct starter_conn *conn_st,
 		if (end->strings[KSCF_IP][0] == '%') {
 			pfree(end->iface);
 			end->iface = clone_str(end->strings[KSCF_IP], "KH_IPADDR end->iface");
-			if (!starter_iface_find(end->iface, family,
+			if (!starter_iface_find(end->iface, hostfam,
 					       &end->addr,
 					       &end->nexthop))
 				conn_st->state = STATE_INVALID;
@@ -452,11 +467,12 @@ static bool validate_end(struct starter_conn *conn_st,
 			break;
 		}
 
-		er = ttoaddr_num(end->strings[KNCF_IP], 0, family,
-				&end->addr);
+		er = ttoaddr_num(end->strings[KNCF_IP], 0, hostfam, &end->addr);
 		if (er != NULL) {
-			/* not numeric, so set the type to the string type */
+			/* not an IP address, so set the type to the string */
 			end->addrtype = KH_IPHOSTNAME;
+		} else {
+			hostfam = end->addr_family = addrtypeof(&end->addr);
 		}
 
 		if (end->id == NULL) {
@@ -485,6 +501,8 @@ static bool validate_end(struct starter_conn *conn_st,
 		break;
 
 	case KH_DEFAULTROUTE:
+		end->addr_family = hostfam;
+
 		starter_log(LOG_LEVEL_DEBUG,
 			    "starter: %s is KH_DEFAULTROUTE", leftright);
 		break;
@@ -543,7 +561,7 @@ static bool validate_end(struct starter_conn *conn_st,
 	}
 
 	/* set nexthop address to something consistent, by default */
-	anyaddr(family, &end->nexthop);
+	anyaddr(hostfam, &end->nexthop);
 	anyaddr(addrtypeof(&end->addr), &end->nexthop);
 
 	/* validate the KSCF_NEXTHOP */
@@ -579,7 +597,7 @@ static bool validate_end(struct starter_conn *conn_st,
 			end->nexttype = KH_IPADDR;
 		}
 	} else {
-		anyaddr(family, &end->nexthop);
+		anyaddr(hostfam, &end->nexthop);
 
 		if (end->addrtype == KH_DEFAULTROUTE) {
 			end->nexttype = KH_DEFAULTROUTE;
@@ -685,10 +703,10 @@ static bool validate_end(struct starter_conn *conn_st,
 	if (end->strings_set[KSCF_CA])
 		end->ca = clone_str(end->strings[KSCF_CA], "KSCF_CA");
 
-	if (end->strings_set[KSCF_UPDOWN])
+	if (end->strings_set[KSCF_UPDOWN]) {
+		pfreeany(end->updown);
 		end->updown = clone_str(end->strings[KSCF_UPDOWN], "KSCF_UPDOWN");
-	else
-		end->updown = clone_str(DEFAULT_UPDOWN, "KSCF_UPDOWN default");
+	}
 
 	if (end->strings_set[KSCF_PROTOPORT]) {
 		err_t ugh;
@@ -1108,35 +1126,36 @@ static bool load_conn(
 	if (conn->options_set[KBF_TYPE]) {
 		switch ((enum keyword_satype)conn->options[KBF_TYPE]) {
 		case KS_TUNNEL:
-			conn->policy |= POLICY_TUNNEL;
 			conn->policy &= ~POLICY_SHUNT_MASK;
+			conn->policy |= POLICY_TUNNEL | POLICY_SHUNT_TRAP;
 			break;
 
 		case KS_TRANSPORT:
 			conn->policy &= ~POLICY_TUNNEL & ~POLICY_SHUNT_MASK;
+			conn->policy |=  POLICY_SHUNT_TRAP;
 			break;
 
 		case KS_PASSTHROUGH:
 			conn->policy &=
 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
-				  POLICY_TUNNEL | POLICY_RSASIG) &
-				~POLICY_SHUNT_MASK;
+				  POLICY_TUNNEL | POLICY_RSASIG |
+				  POLICY_SHUNT_MASK);
 			conn->policy |= POLICY_SHUNT_PASS;
 			break;
 
 		case KS_DROP:
 			conn->policy &=
 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
-				  POLICY_TUNNEL | POLICY_RSASIG) &
-				~POLICY_SHUNT_MASK;
+				  POLICY_TUNNEL | POLICY_RSASIG |
+				  POLICY_SHUNT_MASK);
 			conn->policy |= POLICY_SHUNT_DROP;
 			break;
 
 		case KS_REJECT:
 			conn->policy &=
 				~(POLICY_ENCRYPT | POLICY_AUTHENTICATE |
-				  POLICY_TUNNEL | POLICY_RSASIG) &
-				~POLICY_SHUNT_MASK;
+				  POLICY_TUNNEL | POLICY_RSASIG |
+				  POLICY_SHUNT_MASK);
 			conn->policy |= POLICY_SHUNT_REJECT;
 			break;
 		}
@@ -1266,7 +1285,7 @@ static bool load_conn(
 	if (conn->options_set[KBF_PPK]) {
 		lset_t ppk = LEMPTY;
 
-		if (~(conn->policy & POLICY_IKEV1_ALLOW)) {
+		if (!(conn->policy & POLICY_IKEV1_ALLOW)) {
 			switch (conn->options[KBF_PPK]) {
 			case fo_propose:
 				ppk = POLICY_PPK_ALLOW;
@@ -1291,16 +1310,16 @@ static bool load_conn(
 		conn->policy &= ~(POLICY_ESN_NO | POLICY_ESN_YES);
 
 		switch (conn->options[KBF_ESN]) {
-		case esn_yes:
+		case ESN_YES:
 			conn->policy |= POLICY_ESN_YES;
 			break;
 
-		case esn_no:
+		case ESN_NO:
 			/* this is the default for now */
 			conn->policy |= POLICY_ESN_NO;
 			break;
 
-		case esn_either:
+		case ESN_EITHER:
 			conn->policy |= POLICY_ESN_NO | POLICY_ESN_YES;
 			break;
 		}
@@ -1329,17 +1348,17 @@ static bool load_conn(
 		conn->policy &= ~(POLICY_SAREF_TRACK | POLICY_SAREF_TRACK_CONNTRACK);
 
 		switch (conn->options[KBF_SAREFTRACK]) {
-		case sat_yes:
+		case SAT_YES:
 			/* this is the default */
 			conn->policy |= POLICY_SAREF_TRACK;
 			break;
 
-		case sat_conntrack:
+		case SAT_CONNTRACK:
 			conn->policy |= POLICY_SAREF_TRACK |
 					POLICY_SAREF_TRACK_CONNTRACK;
 			break;
 
-		case sat_no:
+		case SAT_NO:
 			break;
 		}
 	}
@@ -1365,7 +1384,7 @@ static bool load_conn(
 				conn->policy |= POLICY_AUTH_NEVER;
 			/* everything else is only supported for IKEv2 */
 			else if (conn->policy & POLICY_IKEV1_ALLOW) {
-				*perr = "connection allowing ikev1 must use authby= of rsasig,secret or never ";
+				*perr = "connection allowing ikev1 must use authby= of rsasig, secret or never";
 				return TRUE;
 			}
 			else if (streq(val, "null")) {
@@ -1425,10 +1444,6 @@ static bool load_conn(
 	 * verify both ends are using the same inet family, if one end
 	 * is "%any" or "%defaultroute", then perhaps adjust it.
 	 * ensource this for left,leftnexthop,right,rightnexthop
-	 * Ideally, phase out connaddrfamily= which now wrongly assumes
-	 * left,leftnextop,leftsubnet are the same inet family
-	 * Currently, these tests are implicitely done, and wrongly
-	 * in case of 6in4 and 4in6 tunnels
 	 */
 
 	if (conn->options_set[KBF_AUTO])
@@ -1457,7 +1472,7 @@ static void conn_default(struct starter_conn *conn,
 	conn->right.id = clone_str(def->right.id, "conn default rightid");
 	conn->right.rsakey1 = clone_str(def->right.rsakey1, "conn default right rsakey1");
 	conn->right.rsakey2 = clone_str(def->right.rsakey2, "conn default right rsakey2");
-#define C(LR,F) conn->LR.F = clone_str(def->LR.F, "conn default " #LR " " #F)
+#define C(LR,F) conn->LR.F = clone_str(DEFAULT_UPDOWN, "conn default " #LR " " #F)
 #define CLR(F) C(left,F); C(right,F)
 	CLR(updown);
 #undef CLR

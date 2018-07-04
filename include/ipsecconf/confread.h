@@ -25,6 +25,9 @@
 
 # define DEFAULT_UPDOWN "ipsec _updown"
 
+#include "lset.h"
+#include "err.h"
+
 #ifndef _LIBRESWAN_H
 #include <libreswan.h>
 #include "constants.h"

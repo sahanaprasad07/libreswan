@@ -416,7 +416,6 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 	const struct state *pst = state_with_serialno(st->st_clonedfrom);
 
 	switch (st->st_state) {
-
 	case STATE_V2_REKEY_IKE_R:
 		request_ke_and_nonce("IKE rekey KE response gir", st,
 				     st->st_oakley.ta_dh,
@@ -424,6 +423,10 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 		return STF_SUSPEND;
 
 	case STATE_V2_CREATE_R:
+		/*
+		 * ??? if we don't have an md (see above) why are we referencing it?
+		 * ??? clang 6.0.0 warns md might be NULL
+		 */
 		if (md->chain[ISAKMP_NEXT_v2KE] != NULL) {
 			request_ke_and_nonce("Child Responder KE and nonce nr",
 					     st, st->st_oakley.ta_dh,
@@ -435,6 +438,10 @@ static stf_status ikev2_crypto_start(struct msg_digest *md, struct state *st)
 		return STF_SUSPEND;
 
 	case STATE_V2_REKEY_CHILD_R:
+		/*
+		 * ??? if we don't have an md (see above) why are we referencing it?
+		 * ??? clang 6.0.0 warns md might be NULL
+		 */
 		if (md->chain[ISAKMP_NEXT_v2KE] != NULL) {
 			request_ke_and_nonce("Child Rekey Responder KE and nonce nr",
 					     st, st->st_oakley.ta_dh,
@@ -530,7 +537,7 @@ static stf_status ikev2_match_ke_group_and_proposal(struct msg_digest *md,
  * Called by ikev2_parent_inI2outR2_tail() and ikev2_parent_inR2()
  * Do the actual AUTH payload verification
  */
-static bool v2_check_auth(enum ikev2_auth_method atype,
+static bool v2_check_auth(enum ikev2_auth_method recv_auth,
 	struct state *st,
 	const enum original_role role,
 	unsigned char idhash_in[MAX_DIGEST_LEN],
@@ -544,7 +551,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
-		if (!LIN(POLICY_RSASIG, st->st_connection->policy) &&  that_authby != AUTH_RSASIG) {
+		if (that_authby != AUTH_RSASIG) {
 			libreswan_log("Peer attempted RSA authentication but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
@@ -566,26 +573,26 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 
 	case IKEv2_AUTH_PSK:
 	{
-		if (!LIN(POLICY_PSK, st->st_connection->policy) &&  that_authby != AUTH_PSK) {
+		if (that_authby != AUTH_PSK) {
 			libreswan_log("Peer attempted PSK authentication but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
 		}
 
-               stf_status authstat = ikev2_verify_psk_auth(
-                               AUTH_PSK, st, idhash_in,
-                               pbs);
+		stf_status authstat = ikev2_verify_psk_auth(
+			AUTH_PSK, st, idhash_in, pbs);
 
-               if (authstat != STF_OK) {
-                       libreswan_log("PSK Authentication failed: AUTH mismatch!");
-                       return FALSE;
-               }
-               return TRUE;
+		if (authstat != STF_OK) {
+			libreswan_log("PSK Authentication failed: AUTH mismatch!");
+			return FALSE;
+		}
+		return TRUE;
 	}
 
 	case IKEv2_AUTH_NULL:
 	{
-		if (!LIN(POLICY_AUTH_NULL, st->st_connection->policy) &&  that_authby != AUTH_NULL) {
+		if (!(that_authby == AUTH_NULL ||
+		      (that_authby == AUTH_RSASIG && LIN(POLICY_AUTH_NULL, st->st_connection->policy)))) {
 			libreswan_log("Peer attempted NULL authentication but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
@@ -606,6 +613,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	case IKEv2_AUTH_DIGSIG:
 	{
 	/*	if (!LIN(POLICY_RSASIG, st->st_connection->policy) &&  that_authby != AUTH_RSASIG) {
+		if (that_authby != AUTH_RSASIG) {
 			libreswan_log("Peer attempted Authentication through Digital Signature but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
@@ -655,7 +663,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	default:
 	{
 		libreswan_log("authentication method: %s not supported",
-				enum_name(&ikev2_auth_names, atype));
+				enum_name(&ikev2_auth_names, recv_auth));
 		return FALSE;
 	}
 
@@ -726,6 +734,8 @@ static bool id_ipseckey_allowed(struct state *st, enum ikev2_auth_method atype)
  */
 static crypto_req_cont_func ikev2_parent_outI1_continue;
 
+/* extern initiator_function ikev2_parent_outI1; */	/* type assertion */
+
 void ikev2_parent_outI1(int whack_sock,
 		       struct connection *c,
 		       struct state *predecessor,
@@ -742,6 +752,7 @@ void ikev2_parent_outI1(int whack_sock,
 	if (drop_new_exchanges()) {
 		/* Only drop outgoing opportunistic connections */
 		if (c->policy & POLICY_OPPORTUNISTIC) {
+			close_any(whack_sock);
 			return;
 		}
 	}
@@ -819,10 +830,9 @@ void ikev2_parent_outI1(int whack_sock,
 	passert(c->ike_proposals != NULL);
 	st->st_oakley.ta_dh = ikev2_proposals_first_dh(c->ike_proposals);
 	if (st->st_oakley.ta_dh == NULL) {
-		st->st_oakley.ta_dh = ikev2_get_dh_desc(OAKLEY_GROUP_MODP2048);
-		passert(st->st_oakley.ta_dh != NULL);
-		PEXPECT_LOG("No valid MODP (DH) transform found, using %s",
-			    st->st_oakley.ta_dh->common.name);
+		libreswan_log("proposals do not contain a valid DH");
+		delete_state(st); /* pops state? */
+		return;
 	}
 
 	/*
@@ -868,7 +878,7 @@ void ikev2_parent_outI1_continue(struct state *st, struct msg_digest **mdp,
 				 struct pluto_crypto_req *r)
 {
 	DBG(DBG_CONTROL,
-		DBG_log("ikev2_parent_outI1_tail for #%lu",
+		DBG_log("ikev2_parent_outI1_continue for #%lu",
 			st->st_serialno));
 
 	unpack_KE_from_helper(st, r, &st->st_gi);
@@ -878,18 +888,6 @@ void ikev2_parent_outI1_continue(struct state *st, struct msg_digest **mdp,
 		*mdp = fake_md(st);
 	}
 	complete_v2_state_transition(mdp, ikev2_parent_outI1_common(*mdp, st));
-}
-
-stf_status ikev2_parent_outI1_tail(struct state *st, struct msg_digest *md,
-				   struct pluto_crypto_req *r)
-{
-	DBG(DBG_CONTROL,
-		DBG_log("ikev2_parent_outI1_tail for #%lu",
-			st->st_serialno));
-
-	unpack_KE_from_helper(st, r, &st->st_gi);
-	unpack_nonce(&st->st_ni, r);
-	return ikev2_parent_outI1_common(md, st);
 }
 
 static stf_status ikev2_parent_outI1_common(struct msg_digest *md UNUSED,
@@ -1290,7 +1288,7 @@ stf_status ikev2_parent_inI1outR1(struct state *null_st, struct msg_digest *md)
 			(ip_address *)NULL, hportof(&md->sender));
 
 		for (; tmp != NULL; tmp = tmp->hp_next) {
-			if ((tmp->policy & POLICY_SHUNT_MASK) != LEMPTY &&
+			if ((tmp->policy & POLICY_SHUNT_MASK) != POLICY_SHUNT_TRAP &&
 			    tmp->kind == CK_INSTANCE &&
 			    addrinsubnet(&md->sender, &tmp->spd.that.client))
 			{
@@ -1677,7 +1675,7 @@ static stf_status ikev2_parent_inI1outR1_continue_tail(struct state *st,
 		struct ikev2_generic in;
 		int np = IMPAIR(ADD_UNKNOWN_PAYLOAD_TO_SA_INIT) ? ISAKMP_NEXT_v2UNKNOWN :
 			send_certreq ? ISAKMP_NEXT_v2CERTREQ :
-                        (vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
+			(vids != 0) ? ISAKMP_NEXT_v2V : ISAKMP_NEXT_v2NONE;
 		zero(&in);	/* OK: no pointers */
 		in.isag_np = np;
 		in.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
@@ -2067,7 +2065,7 @@ stf_status ikev2_parent_inR1outI2(struct state *st, struct msg_digest *md)
 			break;
 		case v2N_IKEV2_FRAGMENTATION_SUPPORTED:
 			st->st_seen_fragvid = TRUE;
-                        break;
+			break;
 
 		case v2N_USE_PPK:
 			st->st_seen_ppk = TRUE;
@@ -3199,8 +3197,7 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 	 */
 	if (LIN(POLICY_PPK_ALLOW, pc->policy) && pst->st_seen_ppk) {
 		chunk_t *ppk_id;
-		chunk_t *ppk = get_ppk(pst->st_connection, &ppk_id,
-				       &pst->st_ppk_dynamic_filename);
+		chunk_t *ppk = get_ppk(pst->st_connection, &ppk_id);
 
 		if (ppk != NULL) {
 			DBG(DBG_CONTROL, DBG_log("found PPK and PPK_ID for our connection"));
@@ -3223,17 +3220,6 @@ static stf_status ikev2_parent_inR1outI2_tail(struct state *pst, struct msg_dige
 						pst->st_sk_d_no_ppk,
 						pst->st_sk_pi_no_ppk,
 						pst->st_sk_pr_no_ppk);
-			if (pst->st_ppk_dynamic_filename != NULL) {
-				DBG(DBG_CONTROL, DBG_log("PPK is dynamic, with OTP filename: %s",
-							pst->st_ppk_dynamic_filename));
-				if (!update_dynamic_ppk(pst->st_ppk_dynamic_filename)) {
-					/* should we die? how do we prevent accidental re-use? */
-					loglog(RC_LOG_SERIOUS, "OTP could not be updated");
-					return STF_FATAL;
-				} else {
-					DBG(DBG_CONTROL, DBG_log("OTP updated"));
-				}
-			}
 			libreswan_log("PPK AUTH calculated as initiator");
 		} else {
 			if (pc->policy & POLICY_PPK_INSIST) {
@@ -3935,7 +3921,7 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 				return STF_FATAL;
 			}
 
-			const chunk_t *ppk = get_ppk_by_id(&payl.ppk_id, &st->st_ppk_dynamic_filename);
+			const chunk_t *ppk = get_ppk_by_id(&payl.ppk_id);
 			freeanychunk(payl.ppk_id);
 			if (ppk != NULL)
 				found_ppk = TRUE;
@@ -3949,16 +3935,6 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 						st->st_skey_pi_nss,
 						st->st_skey_pr_nss);
 				st->st_ppk_used = TRUE;
-				if (st->st_ppk_dynamic_filename != NULL) {
-					DBG(DBG_CONTROL, DBG_log("PPK is dynamic, with OTP filename: %s",
-									st->st_ppk_dynamic_filename));
-					if (!update_dynamic_ppk(st->st_ppk_dynamic_filename)) {
-						/* should we die? how do we prevent accidental re-use? */
-						loglog(RC_LOG_SERIOUS, "OTP could not be updated");
-					} else {
-						DBG(DBG_CONTROL, DBG_log("OTP updated"));
-					}
-				}
 				libreswan_log("PPK AUTH calculated as responder");
 			} else {
 				libreswan_log("ignored received PPK_IDENTITY - connection does not require PPK or PPKID not found");
@@ -4099,7 +4075,6 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 				st, ORIGINAL_RESPONDER, idhash_in, &pbs_null_auth,
 				AUTH_NULL))
 			{
-				/* TODO: This should really be an encrypted message! */
 				send_v2_notification_from_state(st, md, v2N_AUTHENTICATION_FAILED, NULL);
 				return STF_FATAL;
 			}
@@ -4109,7 +4084,6 @@ stf_status ikev2_parent_inI2outR2_id_tail(struct msg_digest *md)
 				st, ORIGINAL_RESPONDER, idhash_in, &md->chain[ISAKMP_NEXT_v2AUTH]->pbs,
 				st->st_connection->spd.that.authby))
 			{
-			/* TODO: This should really be an encrypted message! */
 			send_v2_notification_from_state(st, md, v2N_AUTHENTICATION_FAILED, NULL);
 			return STF_FATAL;
 			}
@@ -4159,8 +4133,6 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct state *st,
 	{
 		struct ikev2_generic e;
 		pb_stream e_pbs, e_pbs_cipher;
-		bool send_cert = FALSE;
-		unsigned int len;
 		struct isakmp_hdr hdr;
 		int notifies = 0;
 
@@ -4218,7 +4190,7 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct state *st,
 		}
 
 		/* decide to send CERT payload before we generate IDr */
-		send_cert = ikev2_send_cert_decision(st);
+		bool send_cert = ikev2_send_cert_decision(st);
 
 		/* insert an Encryption payload header */
 		e.isag_np = IMPAIR(ADD_UNKNOWN_PAYLOAD_TO_AUTH_SK) ? ISAKMP_NEXT_v2UNKNOWN :
@@ -4412,7 +4384,7 @@ static stf_status ikev2_parent_inI2outR2_auth_tail(struct state *st,
 		 */
 		struct state *const cst = md->st;	/* may actually be parent if no child */
 
-		len = pbs_offset(&e_pbs_cipher);
+		unsigned int len = pbs_offset(&e_pbs_cipher);
 
 		if (!ikev2_padup_pre_encrypt(cst, &e_pbs_cipher))
 			return STF_INTERNAL_ERROR;
@@ -4524,8 +4496,14 @@ stf_status ikev2_process_child_sa_pl(struct msg_digest *md,
 	 * For the responder, go with what ever was negotiated.  For
 	 * the initiator, check what was negotiated against what was
 	 * sent.
+	 *
+	 * Because code expects .st_pfs_group to use NULL, and not
+	 * &ike_alg_dh_none, to indicate no-DH algorithm, the value
+	 * returned by the proposal parser needs to be patched up.
 	 */
-	const struct oakley_group_desc *accepted_dh = proto_info->attrs.transattrs.ta_dh;
+	const struct oakley_group_desc *accepted_dh =
+		proto_info->attrs.transattrs.ta_dh == &ike_alg_dh_none ? NULL
+		: proto_info->attrs.transattrs.ta_dh;
 	switch (st->st_sa_role) {
 	case SA_INITIATOR:
 		pexpect(expect_accepted);
@@ -4642,30 +4620,33 @@ static stf_status ikev2_process_ts_respnse(struct msg_digest *md)
 
 		{
 			const struct spd_route *sra = &c->spd;
-			int bfit_n = ikev2_evaluate_connection_fit(c, sra,
-								   ORIGINAL_INITIATOR,
-								   tsi, tsr,
-								   tsi_n,
-								   tsr_n);
+			int bfit_n = ikev2_evaluate_connection_fit(
+				c, sra, ORIGINAL_INITIATOR,
+				tsi, tsr,
+				tsi_n, tsr_n);
+
 			if (bfit_n > bestfit_n) {
 				DBG(DBG_CONTROLMORE,
 				    DBG_log("prefix fitness found a better match c %s",
 					    c->name));
+
 				int bfit_p = ikev2_evaluate_connection_port_fit(
-						c, sra, ORIGINAL_INITIATOR,
-						tsi, tsr,
-						tsi_n, tsr_n,
-						&best_tsi_i, &best_tsr_i);
+					c, sra, ORIGINAL_INITIATOR,
+					tsi, tsr,
+					tsi_n, tsr_n,
+					&best_tsi_i, &best_tsr_i);
 
 				if (bfit_p > bestfit_p) {
 					DBG(DBG_CONTROLMORE,
 					    DBG_log("port fitness found better match c %s, tsi[%d],tsr[%d]",
 						    c->name, best_tsi_i, best_tsr_i));
+
 					int bfit_pr = ikev2_evaluate_connection_protocol_fit(
-							c, sra, ORIGINAL_INITIATOR, tsi,
-							tsr, tsi_n, tsr_n,
-							&best_tsi_i,
-							&best_tsr_i);
+						c, sra, ORIGINAL_INITIATOR,
+						tsi, tsr,
+						tsi_n, tsr_n,
+						&best_tsi_i, &best_tsr_i);
+
 					if (bfit_pr > bestfit_pr) {
 						DBG(DBG_CONTROLMORE,
 						    DBG_log("protocol fitness found better match c %s, tsi[%d],tsr[%d]",
@@ -4680,12 +4661,12 @@ static stf_status ikev2_process_ts_respnse(struct msg_digest *md)
 					}
 				} else {
 					DBG(DBG_CONTROLMORE,
-							DBG_log("port fitness rejected c %s c->name",
+							DBG_log("port fitness rejected c %s",
 								c->name));
 				}
 			} else {
 				DBG(DBG_CONTROLMORE,
-				    DBG_log("prefix fitness rejected c %s c->name",
+				    DBG_log("prefix fitness rejected c %s",
 					    c->name));
 			}
 		}
@@ -5004,6 +4985,7 @@ stf_status ikev2_parent_inR2(struct state *st, struct msg_digest *md)
 		 */
 		return STF_FATAL;
 	}
+	st->st_ikev2_anon = pst->st_ikev2_anon; /* was set after duplicate_state() */
 
 	/* AUTH succeeded */
 
@@ -5179,16 +5161,16 @@ static bool ikev2_rekey_child_req(struct state *st, chunk_t *spi)
 
 static stf_status ikev2_rekey_child_resp(const struct msg_digest *md)
 {
-        struct state *st = md->st;  /* new child state */
-        struct state *rst = NULL; /* old child state being rekeyed */
-        struct payload_digest *ntfy;
-        struct state *pst = state_with_serialno(st->st_clonedfrom);
-        stf_status ret = STF_OK; /* no v2N_REKEY_SA return OK */
+	struct state *st = md->st;  /* new child state */
+	struct state *rst = NULL; /* old child state being rekeyed */
+	struct payload_digest *ntfy;
+	struct state *pst = state_with_serialno(st->st_clonedfrom);
+	stf_status ret = STF_OK; /* no v2N_REKEY_SA return OK */
 
-        for (ntfy = md->chain[ISAKMP_NEXT_v2N]; ntfy != NULL; ntfy = ntfy->next) {
+	for (ntfy = md->chain[ISAKMP_NEXT_v2N]; ntfy != NULL; ntfy = ntfy->next) {
 		char cib[CONN_INST_BUF];
 
-                switch (ntfy->payload.v2n.isan_type) {
+		switch (ntfy->payload.v2n.isan_type) {
 
 		case v2N_REKEY_SA:
 			DBG(DBG_CONTROL, DBG_log("received v2N_REKEY_SA "));
@@ -5282,7 +5264,7 @@ static stf_status ikev2_rekey_child_copy_ts(const struct msg_digest *md)
 
 /* once done use the same function in ikev2_parent_inR1outI2_tail too */
 static stf_status ikev2_child_add_ipsec_payloads(struct msg_digest *md,
-                                  pb_stream *outpbs,
+				  pb_stream *outpbs,
 				  enum isakmp_xchg_types isa_xchg)
 {
 	bool send_use_transport;
@@ -5383,7 +5365,7 @@ static stf_status ikev2_child_add_ipsec_payloads(struct msg_digest *md,
 }
 
 static stf_status ikev2_child_add_ike_payloads(struct msg_digest *md,
-                                  pb_stream *outpbs)
+				  pb_stream *outpbs)
 {
 	struct state *st = md->st;
 	struct connection *c = st->st_connection;
@@ -5514,8 +5496,8 @@ static notification_t process_ike_rekey_sa_pl_response(struct msg_digest *md,
 	}
 
 	 /* KE in */
-        RETURN_STF_FAILURE(accept_KE(&st->st_gr, "Gr", st->st_oakley.ta_dh,
-                                     &md->chain[ISAKMP_NEXT_v2KE]->pbs));
+	RETURN_STF_FAILURE(accept_KE(&st->st_gr, "Gr", st->st_oakley.ta_dh,
+				     &md->chain[ISAKMP_NEXT_v2KE]->pbs));
 
 	ikev2_copy_cookie_from_sa(st->st_accepted_ike_proposal, st->st_rcookie);
 	rehash_state(st, st->st_icookie, st->st_rcookie);
@@ -5596,14 +5578,14 @@ static notification_t process_ike_rekey_sa_pl(struct msg_digest *md, struct stat
 
 /* initiator received Rekey IKE SA (RFC 7296 1.3.3) response */
 stf_status ikev2_child_ike_inR(struct state *st /* child state */,
-                                   struct msg_digest *md)
+				   struct msg_digest *md)
 {
 	struct state *pst = state_with_serialno(st->st_clonedfrom);
 
 	passert(pst != NULL);
 
 	/* Ni in */
-        RETURN_STF_FAILURE(accept_v2_nonce(md, &st->st_nr, "Nr"));
+	RETURN_STF_FAILURE(accept_v2_nonce(md, &st->st_nr, "Nr"));
 	RETURN_STF_FAILURE_STATUS(process_ike_rekey_sa_pl_response(md, pst,st));
 
 	DBG(DBG_CONTROLMORE,
@@ -5615,25 +5597,19 @@ stf_status ikev2_child_ike_inR(struct state *st /* child state */,
 /* initiator received a create Child SA Response (RFC 7296 1.3.1, 1.3.2) */
 stf_status ikev2_child_inR(struct state *st, struct msg_digest *md)
 {
-	stf_status e;
-
 	RETURN_STF_FAILURE(accept_v2_nonce(md, &st->st_nr, "Nr"));
 
 	RETURN_STF_FAILURE_STATUS(ikev2_process_child_sa_pl(md, TRUE));
 
-	if (st->st_pfs_group == NULL) {
-		e = ikev2_process_ts_and_rest(md);
-		return e;
-	}
+	if (st->st_pfs_group == NULL)
+		return ikev2_process_ts_and_rest(md);
 
 	RETURN_STF_FAILURE(accept_child_sa_KE(md, st, st->st_oakley));
 
 	DBG(DBG_CONTROLMORE,
 	    DBG_log("Calling ikev2_crypto_start() from %s in state %s",
 		    __func__, st->st_state_name));
-	e = ikev2_crypto_start(md, st);
-
-	return e;
+	return ikev2_crypto_start(md, st);
 }
 
 /* processing a new Child SA (RFC 7296 1.3.1 or 1.3.3) request */
@@ -5667,8 +5643,8 @@ stf_status ikev2_child_inIoutR(struct state *st /* child state */,
 	DBG(DBG_CONTROLMORE,
 	    DBG_log("Calling ikev2_crypto_start() from %s in state %s",
 		    __func__, st->st_state_name));
-	stf_status e = ikev2_crypto_start(md, st);
-	return e;
+
+	return ikev2_crypto_start(md, st);
 }
 
 /* processsing a new Rekey IKE SA (RFC 7296 1.3.2) request */
@@ -5846,8 +5822,7 @@ stf_status ikev2_child_ike_rekey_tail(struct state *st UNUSED,
 stf_status ikev2_child_inR_tail(struct state *st UNUSED, struct msg_digest *md,
 				struct pluto_crypto_req *r UNUSED)
 {
-	stf_status e = ikev2_process_ts_and_rest(md);
-	return e;
+	return ikev2_process_ts_and_rest(md);
 }
 
 static stf_status ikev2_start_new_exchange(struct state *st)
@@ -5875,8 +5850,7 @@ stf_status ikev2_child_out_cont(struct state *st, struct msg_digest *md,
 	set_cur_state(st);
 	RETURN_STF_FAILURE_STATUS(ikev2_start_new_exchange(st));
 
-	stf_status e = ikev2_child_out_tail(md);
-	return e;
+	return ikev2_child_out_tail(md);
 }
 
 void ikev2_child_send_next(struct state *st)
@@ -5897,23 +5871,18 @@ void ikev2_child_send_next(struct state *st)
 static void delete_or_replace_state(struct state *st) {
 	struct connection *c = st->st_connection;
 
-	if (st->st_event == NULL) { /* this could be an assert/except? */
+	if (st->st_event == NULL) {
+		/* ??? should this be an assert/expect? */
 		loglog(RC_LOG_SERIOUS, "received Delete SA payload: delete IPSEC State #%lu. st_event == NULL",
 				st->st_serialno);
 		delete_state(st);
-		return;
-	}
-
-	if (st->st_event->ev_type == EVENT_SA_EXPIRE) {
-		/* this state  was going to  EXPIRE just let it now*/
-		delete_event(st);
-		event_schedule_s(EVENT_SA_EXPIRE, 0, st);
+	} else if (st->st_event->ev_type == EVENT_SA_EXPIRE) {
+		/* this state  was going to EXPIRE: hurry it along */
+		/* ??? why is this treated specially.  Can we not delete_state()? */
 		loglog(RC_LOG_SERIOUS, "received Delete SA payload: expire IPSEC State #%lu now",
 				st->st_serialno);
-		return;
-	}
-
-	if ((c->newest_ipsec_sa == st->st_serialno && (c->policy & POLICY_UP))
+		event_force(EVENT_SA_EXPIRE, st);
+	} else if ((c->newest_ipsec_sa == st->st_serialno && (c->policy & POLICY_UP))
 		&& ((st->st_event->ev_type == EVENT_SA_REPLACE) ||
 		    (st->st_event->ev_type == EVENT_v2_SA_REPLACE_IF_USED))) {
 		/*
@@ -5922,9 +5891,8 @@ static void delete_or_replace_state(struct state *st) {
 		 */
 		loglog(RC_LOG_SERIOUS, "received Delete SA payload: replace IPSEC State #%lu now",
 				st->st_serialno);
-		delete_event(st);
 		st->st_margin = deltatime(0);
-		event_schedule_s(EVENT_SA_REPLACE, 0, st);
+		event_force(EVENT_SA_REPLACE, st);
 	} else {
 		loglog(RC_LOG_SERIOUS, "received Delete SA payload: delete IPSEC State #%lu now",
 				st->st_serialno);
@@ -5949,6 +5917,7 @@ static void set_mobike_remote_addr(struct msg_digest *md, struct state *st)
 static bool mobike_check_established(const struct state *st)
 {
 	struct connection *c = st->st_connection;
+	/* notice tricky use of & on booleans */
 	bool ret = LIN(POLICY_MOBIKE, c->policy) &
 		   st->st_seen_mobike & st->st_sent_mobike &
 		   IS_ISAKMP_SA_ESTABLISHED(st->st_state);
@@ -5960,6 +5929,7 @@ static bool process_mobike_resp(struct msg_digest *md)
 {
 	struct state *st = md->st;
 	bool may_mobike = mobike_check_established(st);
+	/* ??? there is currently no need for separate natd_[sd] variables */
 	bool natd_s = FALSE;
 	bool natd_d = FALSE;
 	struct payload_digest *ntfy;
@@ -5986,11 +5956,14 @@ static bool process_mobike_resp(struct msg_digest *md)
 			break;
 		}
 	}
+
+	/* use of bitwise & on bool values is correct but odd */
 	bool ret  = natd_s & natd_d;
-	if (ret)
-		if (!update_mobike_endpoints(st, md)) { /* IPs already updated from md */
-			return FALSE;
-		}
+
+	if (ret && !update_mobike_endpoints(st, md)) {
+		/* IPs already updated from md */
+		return FALSE;
+	}
 	update_ike_endpoints(st, md); /* update state sender so we can find it for IPsec SA */
 
 	return ret;
@@ -6360,13 +6333,11 @@ stf_status process_encrypted_informational_ikev2(struct state *st,
 			 * IPsec SA DELETE response is DELETE
 			 * Neither can mix with MOBIKE
 			 */
-			if (del_ike)
-				e.isag_np = ISAKMP_NEXT_v2NONE;
-			else if (ndp != 0)
-				e.isag_np = ISAKMP_NEXT_v2D;
-			else if (send_mobike_resp)
-				e.isag_np = ISAKMP_NEXT_v2N;
-			else e.isag_np = ISAKMP_NEXT_v2NONE;
+			e.isag_np =
+				del_ike ? ISAKMP_NEXT_v2NONE :
+				ndp != 0 ? ISAKMP_NEXT_v2D :
+				send_mobike_resp ? ISAKMP_NEXT_v2N :
+				ISAKMP_NEXT_v2NONE;
 
 			e.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
 
@@ -6389,9 +6360,8 @@ stf_status process_encrypted_informational_ikev2(struct state *st,
 	}
 
 	if (send_mobike_resp) {
-		stf_status e;
 		int np = (cookie2.len != 0) ? ISAKMP_NEXT_v2N : ISAKMP_NEXT_v2NONE;
-		e = add_mobike_response_payloads(np, &cookie2, md, &e_pbs_cipher);
+		stf_status e = add_mobike_response_payloads(np, &cookie2, md, &e_pbs_cipher);
 		if (e != STF_OK)
 			return e;
 	}
@@ -6483,7 +6453,7 @@ stf_status process_encrypted_informational_ikev2(struct state *st,
 									v2del->isad_protoid),
 								ntohl((uint32_t)spi)));
 						/* we just received a delete, don't send another delete */
-						dst->st_ikev2_no_del = TRUE;
+						dst->st_suppress_del_notify = TRUE;
 						passert(dst != st);	/* st is a parent */
 						if (!del_ike && responding) {
 							struct ipsec_proto_info *pr =
@@ -6617,20 +6587,22 @@ stf_status process_encrypted_informational_ikev2(struct state *st,
 
 stf_status ikev2_send_livenss_probe(struct state *st)
 {
-	struct state *pst = st;
-
-	if (IS_CHILD_SA(st)) {
-		pst = state_with_serialno(st->st_clonedfrom);
-		if (pst == NULL) {
-			DBG(DBG_CONTROL,
-			    DBG_log("IKE SA does not exist for this child SA - should not happen"));
-			DBG(DBG_CONTROL,
-			    DBG_log("INFORMATIONAL exchange cannot be sent"));
-			return STF_IGNORE;
-		}
+	struct ike_sa *ike = ike_sa(st);
+	if (ike == NULL) {
+		DBG(DBG_CONTROL,
+		    DBG_log("IKE SA does not exist for this child SA - should not happen"));
+		DBG(DBG_CONTROL,
+		    DBG_log("INFORMATIONAL exchange cannot be sent"));
+		return STF_IGNORE;
 	}
 
-	stf_status e = ikev2_send_informational(st, pst, 0);
+	/*
+	 * XXX: What does it mean to send a liveness probe for a CHILD
+	 * SA?  Since the packet contents are empty there's nothing to
+	 * identify the CHILD, just the IKE SA!?!
+	 */
+	stf_status e = send_v2_informational_request("liveness probe informational request",
+						     st, ike, NULL);
 
 	pstats_ike_dpd_sent++;
 
@@ -6654,127 +6626,7 @@ static stf_status add_mobike_payloads(struct state *st, pb_stream *pbs)
 	return STF_OK;
 }
 
-stf_status ikev2_send_informational(struct state *st, struct state *pst,
-		v2_notification_t v2N)
-{
-
-	/* buffer in which to marshal our informational message.
-	 * We don't use reply_buffer/reply_stream because it might be in use.
-	 */
-	u_char buffer[1024];	/* ??? large enough for any informational? */
-	unsigned char *encstart;
-	unsigned char *iv;
-
-	struct ikev2_generic e;
-	pb_stream e_pbs, e_pbs_cipher;
-	pb_stream rbody;
-	pb_stream reply_stream;
-
-	switch (v2N) {
-	case v2N_NOTHING_WRONG:
-		/* This is an empty informational exchange (A.K.A liveness check) */
-		e.isag_np = ISAKMP_NEXT_v2NONE;
-		break;
-
-	case v2N_UPDATE_SA_ADDRESSES:
-		e.isag_np = ISAKMP_NEXT_v2N;
-		break;
-
-	/* PAUL: We don't use this function for sending DELETE payloads? */
-	/*  e.isag_np = ISAKMP_NEXT_v2D; */
-
-	default:
-		bad_case(v2N);
-
-	}
-
-	init_out_pbs(&reply_stream, buffer, sizeof(buffer),
-			"informational exchange request packet");
-
-	/* HDR out */
-	{
-		struct isakmp_hdr hdr;
-
-		zero(&hdr);	/* OK: no pointer fields */
-		hdr.isa_version = build_ikev2_version();
-		memcpy(hdr.isa_rcookie, pst->st_rcookie, COOKIE_SIZE);
-		memcpy(hdr.isa_icookie, pst->st_icookie, COOKIE_SIZE);
-		hdr.isa_xchg = ISAKMP_v2_INFORMATIONAL;
-		hdr.isa_np = ISAKMP_NEXT_v2SK;
-		hdr.isa_msgid = htonl(pst->st_msgid_nextuse);
-
-		/* encryption role based on original state not md state */
-		if (pst->st_original_role == ORIGINAL_INITIATOR)
-			hdr.isa_flags = ISAKMP_FLAGS_v2_IKE_I;
-
-		/* not setting message responder flag */
-
-		if (DBGP(IMPAIR_SEND_BOGUS_ISAKMP_FLAG))
-			hdr.isa_flags |= ISAKMP_FLAGS_RESERVED_BIT6;
-
-		if (!out_struct(&hdr, &isakmp_hdr_desc,
-					&reply_stream, &rbody))
-			return STF_FATAL;
-	}
-
-	/* insert an Encryption payload header */
-	e.isag_critical = ISAKMP_PAYLOAD_NONCRITICAL;
-	if (!out_struct(&e, &ikev2_sk_desc, &rbody, &e_pbs))
-		return STF_FATAL;
-
-	/* IV */
-	iv = e_pbs.cur;
-	if (!emit_wire_iv(st, &e_pbs))
-		return STF_INTERNAL_ERROR;
-
-	/* note where cleartext starts */
-	init_pbs(&e_pbs_cipher, e_pbs.cur, e_pbs.roof - e_pbs.cur,
-			"cleartext");
-	e_pbs_cipher.container = &e_pbs;
-	e_pbs_cipher.desc = NULL;
-	e_pbs_cipher.cur = e_pbs.cur;
-	encstart = e_pbs_cipher.cur;
-
-	if (v2N == v2N_UPDATE_SA_ADDRESSES) {
-		stf_status retmob = add_mobike_payloads(st, &e_pbs_cipher);
-
-		if (retmob != STF_OK) {
-			return  retmob;
-		}
-	}
-
-	if (!ikev2_padup_pre_encrypt(st, &e_pbs_cipher))
-		return STF_INTERNAL_ERROR;
-
-	close_output_pbs(&e_pbs_cipher);
-
-	{
-		stf_status ret;
-		unsigned char *authloc = ikev2_authloc(pst, &e_pbs);
-
-		passert(authloc != NULL);
-
-		close_output_pbs(&e_pbs);
-		close_output_pbs(&rbody);
-		close_output_pbs(&reply_stream);
-
-		ret = ikev2_encrypt_msg(ike_sa(st), reply_stream.start,
-					iv, encstart, authloc);
-		if (ret != STF_OK)
-			return STF_FATAL;
-	}
-	/* cannot use ikev2_update_msgid_counters - no md here */
-	/* But we know we are the initiator for thie exchange */
-	pst->st_msgid_nextuse += 1;
-
-	pst->st_pend_liveness = TRUE; /* we should only do this when dpd/liveness is active? */
-	record_and_send_v2_ike_msg(st, &reply_stream,
-				   "packet for ikev2_send_informational");
-
-	return STF_OK;
-}
-
-bool ikev2_rekey_ike_start(struct state *st)
+void ikev2_rekey_ike_start(struct state *st)
 {
 	struct pending p;
 	p.whack_sock = NULL_FD;
@@ -6787,7 +6639,6 @@ bool ikev2_rekey_ike_start(struct state *st)
 	p.uctx = st->sec_ctx;
 #endif
 	ikev2_initiate_child_sa(&p);
-	return TRUE;
 }
 
 void ikev2_initiate_child_sa(struct pending *p)
@@ -6828,6 +6679,8 @@ void ikev2_initiate_child_sa(struct pending *p)
 
 	freeanychunk(st->st_ni); /* this is from the parent. */
 	freeanychunk(st->st_nr); /* this is from the parent. */
+
+	st->st_original_role = ORIGINAL_INITIATOR;
 
 	if (ipsec_sa) {
 		const struct state *rst = state_with_serialno(p->replacing);
@@ -6915,8 +6768,7 @@ void ikev2_initiate_child_sa(struct pending *p)
 				});
 	}
 
-	delete_event(st);
-	event_schedule_s(EVENT_v2_INITIATE_CHILD, 0, st);
+	event_force(EVENT_v2_INITIATE_CHILD, st);
 	reset_globals();
 }
 
@@ -7023,7 +6875,8 @@ static void initiate_mobike_probe(struct state *st, struct starter_end *this,
 	const struct iface_port *o_iface = st->st_interface;
 	st->st_interface = iface;
 
-	ikev2_send_informational(st, st, v2N_UPDATE_SA_ADDRESSES);
+	send_v2_informational_request("mobike informational request",
+				      st, ike_sa(st), add_mobike_payloads);
 
 	st->st_interface = o_iface;
 }

@@ -33,6 +33,7 @@
 #include <libreswan.h>
 
 #include "constants.h"
+#include "lswtool.h"
 #include "lswlog.h"
 
 bool log_to_stderr = TRUE;	/* should log go to stderr? */
@@ -74,11 +75,9 @@ void lswlog_log_prefix(struct lswlog *buf)
 	lswlogf(buf, "%s%s", progname, prog_suffix);
 }
 
-void lswlog_to_log_whack_stream(struct lswlog *buf, enum rc_type rc UNUSED)
+void lswlog_to_whack_stream(struct lswlog *buf)
 {
-	if (log_to_stderr) {
-		fprintf(stderr, "%s\n", buf->array);
-	}
+	fprintf(stderr, "%s\n", buf->array);
 }
 
 void lswlog_to_debug_stream(struct lswlog *buf)
@@ -89,4 +88,16 @@ void lswlog_to_debug_stream(struct lswlog *buf)
 void lswlog_to_error_stream(struct lswlog *buf)
 {
 	fprintf(stderr, "%s\n", buf->array);
+}
+
+void lswlog_to_log_stream(struct lswlog *buf)
+{
+	if (log_to_stderr) {
+		fprintf(stderr, "%s\n", buf->array);
+	}
+}
+
+void lswlog_to_default_streams(struct lswlog *buf, enum rc_type rc UNUSED)
+{
+	lswlog_to_log_stream(buf);
 }

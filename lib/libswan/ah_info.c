@@ -42,7 +42,7 @@ static bool ah_proposal_ok(const struct proposal_parser *parser,
 	impaired_passert(PROPOSAL_PARSER, proposal->integ != NULL);
 
 	/* ah=null is invalid */
-	if (!IMPAIR(ALLOW_NULL_NULL) &&
+	if (!IMPAIR(ALLOW_NULL_NONE) &&
 	    proposal->integ == &ike_alg_integ_none) {
 		snprintf(parser->err_buf, parser->err_buf_len,
 			 "AH cannot have 'none' as the integrity algorithm");
@@ -79,7 +79,7 @@ const struct proposal_protocol ah_proposal_protocol = {
  * XXX: Because it is parsing an "ah" line which requires a different
  * parser configuration - encryption isn't allowed.
  *
- * ??? the only difference between this and alg_info_esp is in two
+ * ??? the only difference between this and alg_info_esp_create_from_str is in two
  * parameters to alg_info_parse_str.  XXX: Things are down to just the
  * last parameter being different - but that is critical as it
  * determines what is allowed.

@@ -179,7 +179,7 @@ struct state_v1_microcode {
 	lset_t req_payloads;    /* required payloads (allows just one) */
 	lset_t opt_payloads;    /* optional payloads (any mumber) */
 	enum event_type timeout_event;
-	state_transition_fn *processor;
+	ikev1_state_transition_fn *processor;
 };
 
 /* State Microcode Flags, in several groups */
@@ -215,9 +215,8 @@ struct state_v1_microcode {
 
 /* end of flags */
 
-static state_transition_fn      /* forward declaration */
-	unexpected,
-	informational;
+static ikev1_state_transition_fn unexpected;      /* forward declaration */
+static ikev1_state_transition_fn informational;      /* forward declaration */
 
 /*
  * v1_state_microcode_table is a table of all state_v1_microcode
@@ -922,16 +921,6 @@ static stf_status informational(struct state *st, struct msg_digest *md)
 			}
 			return STF_IGNORE;
 		default:
-			if (st != NULL &&
-			    (lmod_is_set(st->st_connection->extra_impairing,
-					 IMPAIR_DIE_ONINFO))) {
-				loglog(RC_LOG_SERIOUS,
-				       "received unhandled informational notification payload %d: '%s'",
-				       n->isan_type,
-				       enum_name(&ikev1_notify_names,
-						 n->isan_type));
-				return STF_FATAL;
-			}
 			loglog(RC_LOG_SERIOUS,
 			       "received and ignored informational message");
 			return STF_IGNORE;
@@ -2175,16 +2164,6 @@ void process_packet_tail(struct msg_digest **mdp)
 					       p->payload.notification.isan_length);
 					DBG_dump_pbs(&p->pbs);
 				}
-				if (st != NULL &&
-				    lmod_is_set(st->st_connection->extra_impairing,
-						IMPAIR_DIE_ONINFO)) {
-					loglog(RC_LOG_SERIOUS,
-					       "received and failed on unknown informational message");
-					complete_v1_state_transition(mdp,
-								     STF_FATAL);
-					/* our caller will release_any_md(mdp); */
-					return;
-				}
 			}
 			DBG_cond_dump(DBG_PARSING, "info:", p->pbs.cur, pbs_left(
 					      &p->pbs));
@@ -2274,12 +2253,13 @@ void complete_v1_state_transition(struct msg_digest **mdp, stf_status result)
 
 	/* handle oddball/meta results now */
 
-	/* stats fixup for STF_FAIL */
-	if (result > STF_FAIL) {
-		pstats(ike_stf, STF_FAIL);
-	} else {
-		pstats(ike_stf, result);
-	}
+	/*
+	 * statistics; lump all FAILs together
+	 *
+	 * Fun fact: using min() stupidly fails (at least in GCC 8.1.1 with -Werror=sign-compare)
+	 * error: comparison of integer expressions of different signedness: `stf_status' {aka `enum <anonymous>'} and `int'
+	 */
+	pstats(ike_stf, PMIN(result, STF_FAIL));
 
 	DBG(DBG_CONTROL,
 	    DBG_log("complete v1 state transition with %s",
@@ -2414,22 +2394,25 @@ void complete_v1_state_transition(struct msg_digest **mdp, stf_status result)
 		/* Delete IKE fragments */
 		release_fragments(st);
 
-		/* update the previous packet history */
-		remember_received_packet(st, md);
-
-		/* free previous transmit packet */
+		/* scrub the previous packet exchange */
+		freeanychunk(st->st_rpacket);
 		freeanychunk(st->st_tpacket);
 
 		/* in aggressive mode, there will be no reply packet in transition
 		 * from STATE_AGGR_R1 to STATE_AGGR_R2
 		 */
-		if (nat_traversal_enabled && st->st_connection->ikev1_natt != natt_none) {
+		if (nat_traversal_enabled && st->st_connection->ikev1_natt != NATT_NONE) {
 			/* adjust our destination port if necessary */
 			nat_traversal_change_port_lookup(md, st);
 		}
 
 		/* if requested, send the new reply packet */
 		if (smc->flags & SMF_REPLY) {
+			/*
+			 * Since replying, save previous packet so
+			 * that re-transmits can deal with it.
+			 */
+			remember_received_packet(st, md);
 			DBG(DBG_CONTROL, {
 				ipstr_buf b;
 				DBG_log("sending reply packet to %s:%u (from port %u)",
@@ -2620,10 +2603,9 @@ void complete_v1_state_transition(struct msg_digest **mdp, stf_status result)
 				 */
 				stf_status s = dpd_init(st);
 
-				pexpect(s != STF_FAIL);
-				if (s == STF_FAIL)
+				if (!pexpect(s != STF_FAIL))
 					result = STF_FAIL; /* ??? fall through !?! */
-				/* ??? result not subsequently used */
+				/* ??? result not subsequently used. Looks bad! */
 			}
 		}
 
@@ -2687,6 +2669,11 @@ void complete_v1_state_transition(struct msg_digest **mdp, stf_status result)
 			change_state(st, STATE_MODE_CFG_R1);
 			set_cur_state(st);
 			libreswan_log("Sending MODE CONFIG set");
+			/*
+			 * ??? we ignore the result of modecfg.
+			 * But surely, if it fails, we ought to terminate this exchange.
+			 * What do the RFCs say?
+			 */
 			modecfg_start_set(st);
 			break;
 		}
@@ -3111,7 +3098,7 @@ void doi_log_cert_thinking(u_int16_t auth,
 		} else if (certtype == CERT_NONE) {
 			DBG(DBG_CONTROL,
 				DBG_log("I did not send a certificate because I do not have one."));
-		} else if (policy == cert_sendifasked) {
+		} else if (policy == CERT_SENDIFASKED) {
 			DBG(DBG_CONTROL,
 				DBG_log("I did not send my certificate because I was not asked to."));
 		}

@@ -701,7 +701,9 @@ const struct ike_alg_type ike_alg_encrypt = {
 
 static const struct oakley_group_desc *dh_descriptors[] = {
 	&ike_alg_dh_none,
+#ifdef USE_DH2
 	&oakley_group_modp1024,
+#endif
 	&oakley_group_modp1536,
 	&oakley_group_modp2048,
 	&oakley_group_modp3072,
@@ -714,8 +716,12 @@ static const struct oakley_group_desc *dh_descriptors[] = {
 #ifdef USE_DH22
 	&oakley_group_dh22,
 #endif
+#ifdef USE_DH23
 	&oakley_group_dh23,
+#endif
+#ifdef USE_DH24
 	&oakley_group_dh24,
+#endif
 #ifdef USE_DH31
 	&oakley_group_dh31,
 #endif
@@ -824,7 +830,7 @@ static void check_algorithm_table(const struct ike_alg_type *type)
 		passert_ike_alg(alg, alg->officname != NULL);
 		passert_ike_alg(alg, alg->algo_type == type);
 
-                /*
+		/*
 		 * Don't allow 0 as an algorithm ID.
 		 *
 		 * Don't even try to check 'none' algorithms.
@@ -915,7 +921,7 @@ static void check_algorithm_table(const struct ike_alg_type *type)
 		}
 	}
 
-        /*
+	/*
 	 * Log the final list as a pretty table.
 	 *
 	 * If FIPS, scream about.  This way grepping for FIPS shows up

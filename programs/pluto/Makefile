@@ -107,18 +107,23 @@ endif
 
 OBJS += x509.o
 OBJS += fetch.o
+OBJS += crl_queue.o
 
 ifeq ($(USE_IPSEC_CONNECTION_LIMIT),true)
 CFLAGS += -DIPSEC_CONNECTION_LIMIT=$(IPSEC_CONNECTION_LIMIT)
 endif
 
-OBJS += ikev1_xauth.o addresspool.o
-OBJS += $(call if-enabled, USE_XAUTHPAM, pam_conv.o)
+OBJS += addresspool.o
+
+# ikev1_xauth.c calls crypt(), link it in.
+OBJS += ikev1_xauth.o
+LDFLAGS += $(CRYPT_LDFLAGS)
+
+ifeq ($(USE_XAUTHPAM),true)
 OBJS += xauth.o
-LDFLAGS += $(XAUTHPAM_LDFLAGS)
-ifneq ($(BUILDENV), darwin)
-LDFLAGS += -lcrypt
+OBJS += pam_conv.o
 endif
+LDFLAGS += $(XAUTHPAM_LDFLAGS)
 
 OBJS += ikev1_aggr.o
 
@@ -163,11 +168,7 @@ LDFLAGS += $(NSPR_LDFLAGS)
 LDFLAGS += -lpthread
 
 LDFLAGS += $(FIPSCHECK_LDFLAGS)
-
-ifeq ($(USE_LIBCAP_NG),true)
-CFLAGS += -DHAVE_LIBCAP_NG
-LDFLAGS += -lcap-ng
-endif
+LDFLAGS += $(LIBCAP_NG_LDFLAGS)
 
 # OSDEP already set in objdir.mk?
 OSDEP?=$(shell uname -s | tr 'A-Z' 'a-z')

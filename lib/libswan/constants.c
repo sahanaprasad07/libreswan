@@ -742,16 +742,16 @@ enum_names ikev2_cert_type_names = {
  * certificate request payload policy
  */
 static const char *const certpolicy_type_name[] = {
-	"cert_neversend",
-	"cert_sendifasked",
-	"cert_alwayssend",
+	"CERT_NEVERSEND",
+	"CERT_SENDIFASKED",
+	"CERT_ALWAYSSEND",
 };
 
 enum_names certpolicy_type_names = {
-	cert_neversend,
-	cert_alwayssend,
+	CERT_NEVERSEND,
+	CERT_ALWAYSSEND,
 	ARRAY_REF(certpolicy_type_name),
-	NULL, /* prefix */
+	"CERT_", /* prefix */
 	NULL
 };
 
@@ -1620,21 +1620,6 @@ enum_names ikev1_notify_names = {
 	&ikev1_notify_status_names
 };
 
-/*
-static const char *const ikev2_ppk_id_type_name[] = {
-	"PPK_ID_OPAQUE",
-	"PPK_ID_FIXED",
-};
-
-static enum_names ikev2_ppk_id_type_names = {
-	PPK_ID_OPAQUE,
-	PPK_ID_FIXED,
-	ARRAY_REF(ikev2_ppk_id_type_name),
-	NULL,
-	NULL
-};
-*/
-
 static const char *const ikev2_notify_name_private[] = {
 	"v2N_NULL_AUTH",	/* 40960, used for mixed OE */
 };
@@ -2080,7 +2065,7 @@ enum_names pkk_names = {
 /*
  * IKEv2 PPK ID types - draft-ietf-ipsecme-qr-ikev2-01
  */
-static const char *const ikev2_ppk_id_name[] = {
+static const char *const ikev2_ppk_id_type_name[] = {
 	/* 0 - Reserved */
 	"PPK_ID_OPAQUE",
 	"PPK_ID_FIXED",
@@ -2088,10 +2073,10 @@ static const char *const ikev2_ppk_id_name[] = {
 	/* 128 - 255 Private Use */
 };
 
-enum_names ikev2_ppk_id_names = {
+enum_names ikev2_ppk_id_type_names = {
 	PPK_ID_OPAQUE,
 	PPK_ID_FIXED,
-	ARRAY_REF(ikev2_ppk_id_name),
+	ARRAY_REF(ikev2_ppk_id_type_name),
 	"PPK_ID_", /* prefix */
 	NULL
 };
@@ -2111,24 +2096,6 @@ enum_names spi_names = {
 	"%",	/* prefix */
 	NULL
 };
-
-/*
- * Values for right= and left=
- */
-static struct keyword_enum_value kw_host_values[] = {
-	{ "%defaultroute",  KH_DEFAULTROUTE },
-	{ "%any",           KH_ANY },
-	{ "%",              KH_IFACE },
-	{ "%oppo",          KH_OPPO },
-	{ "%opportunistic", KH_OPPO },
-	{ "%opportunisticgroup", KH_OPPOGROUP },
-	{ "%oppogroup",     KH_OPPOGROUP },
-	{ "%group",         KH_GROUP },
-	{ "%hostname",      KH_IPHOSTNAME }, /* makes no sense on input */
-};
-
-struct keyword_enum_values kw_host_list =
-	{ kw_host_values, elemsof(kw_host_values) };
 
 /*
  * Iterate over the enum_names returning all the valid indexes.
@@ -2575,7 +2542,7 @@ static const enum_names *en_checklist[] = {
 	&ikev2_trans_type_names,
 	&ikev2_trans_attr_descs,
 	&pkk_names,
-	&ikev2_ppk_id_names,
+	&ikev2_ppk_id_type_names,
 };
 
 void check_enum_names(enum_names *checklist[], size_t tl)

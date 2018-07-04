@@ -1,7 +1,8 @@
-/* time objects and functions, for libreswan
+/* time difference objects and functions, for libreswan
  *
  * Copyright (C) 1998, 1999, 2000  Henry Spencer.
  * Copyright (C) 1999, 2000, 2001  Richard Guy Briggs
+ * Copyright (C) 2018 Andrew Cagney
  *
  * This library is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Library General Public License as published by
@@ -15,12 +16,13 @@
  *
  */
 
-#ifndef _DELTATIME_H
-#define _DELTATIME_H    /* seen it, no need to see it again */
+#ifndef DELTATIME_H
+#define DELTATIME_H    /* seen it, no need to see it again */
 
-#include <sys/time.h>
-#include <time.h>
-#include <inttypes.h>
+#include <time.h>		/* for time_t */
+#include <sys/time.h>		/* for struct timeval */
+#include <stdint.h>		/* for intmax_t */
+#include <stdbool.h>		/* for bool */
 
 struct lswlog;
 
@@ -38,20 +40,25 @@ struct lswlog;
 /*
  * deltatime_t: relative time between events.  Presumed continuous.
  *
- * It seems that some compilers don't like the static constructor
- * DELTATIME() being strongly typed (that is using a cast like
- * (deltatime_t) {{...}}).  Get around this by providing both
- * DELTATIME() and deltatime(); and DELTATIME_MS() and deltatime_ms().
+ * A struct initializer for an object of static storage duration
+ * cannot include a compound literal (or a function call).
+ * DELTATIME_INIT is suitable for a struct initializer.
+ * It's optional in an initializer for an object of automatic storage duration.
+ * Because it lacks the cast, this macro should not be used in other contexts.
  * Sigh.
  */
 
 typedef struct { intmax_t ms; } deltatime_t;
 
-#define DELTATIME(S) { (intmax_t)((S) * 1000) }
-deltatime_t deltatime(time_t secs);
+#define DELTATIME_INIT(S) { (intmax_t)((S) * 1000) }
 
-#define DELTATIME_MS(MS) { (MS) }
-deltatime_t deltatime_ms(intmax_t ms);
+static inline deltatime_t deltatime(time_t secs) {
+	return (deltatime_t) DELTATIME_INIT(secs);
+}
+
+static inline deltatime_t deltatime_ms(intmax_t ms) {
+	return (deltatime_t) { ms };
+}
 
 /* sign(a - b) */
 int deltatime_cmp(deltatime_t a, deltatime_t b);

@@ -426,7 +426,7 @@ static bool parser_alg_info_add(const struct proposal_parser *parser,
 	LSWDBGP(DBG_PROPOSAL_PARSER, buf) {
 		lswlogs(buf, "algs:");
 		for (struct token *token = tokens; token->alg.ptr != NULL; token++) {
-			lswlogf(buf, " algs[%zu] = '"PRISHUNK"'",
+			lswlogf(buf, " algs[%tu] = '"PRISHUNK"'",
 				token - tokens, SHUNKF(token->alg));
 		}
 	}
@@ -613,7 +613,7 @@ struct proposal_parser proposal_parser(const struct proposal_policy *policy,
 bool proposal_aead_none_ok(const struct proposal_parser *parser,
 			   const struct proposal_info *proposal)
 {
-	if (IMPAIR(ALLOW_NULL_NULL)) {
+	if (IMPAIR(ALLOW_NULL_NONE)) {
 		return true;
 	}
 
@@ -714,10 +714,10 @@ size_t lswlog_proposal_info(struct lswlog *log,
 	}
 
 	if (proposal->dh != NULL) {
-		size += lswlogs(log, sep); sep = "-";
+		size += lswlogs(log, sep); sep = "-";	/* sep not subsequently used */
 		size += lswlogs(log, proposal->dh->common.fqn);
 	} else if (IMPAIR(PROPOSAL_PARSER)) {
-		size += lswlogs(log, sep); sep = "-";
+		size += lswlogs(log, sep); sep = "-";	/* sep not subsequently used */
 		size += lswlogs(log, "[DH]");
 	}
 

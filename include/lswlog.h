@@ -24,9 +24,11 @@
 #include <stdio.h>		/* for FILE */
 #include <stddef.h>		/* for size_t */
 
-/* moved common code to library file */
+#include "lset.h"
+#include "lswcdefs.h"
+
 #include "libreswan/passert.h"
-#include "constants.h"		/* for lset_t ... */
+#include "constants.h"		/* for DBG_... */
 
 /* Build up a diagnostic in a static buffer -- NOT RE-ENTRANT.
  * Although this would be a generally useful function, it is very
@@ -46,13 +48,6 @@ extern err_t builddiag(const char *fmt, ...) PRINTF_LIKE(1);	/* NOT RE-ENTRANT *
 extern void sanitize_string(char *buf, size_t size);
 
 extern bool log_to_stderr;          /* should log go to stderr? */
-
-
-/*
- * For stand-alone tools.
- */
-extern const char *progname;
-extern void tool_init_log(const char *name);
 
 
 /*
@@ -132,68 +127,74 @@ struct lswlog;
 /*
  * The logging streams used by libreswan.
  *
- * So far three^D^D^D^D^D four^D^D^D^D five^D^D^D^D six have been
- * identified; and lets not forget that code writes to STDOUT and
- * STDERR directly.
+ * So far three^D^D^D^D^D four^D^D^D^D five^D^D^D^D six^D^D^D
+ * seven^D^D^D^D^D five.five streams have been identified; and lets
+ * not forget that code writes to STDOUT and STDERR directly.
  *
  * The streams differ in the syslog severity and what PREFIX is
- * assumed to be present.
+ * assumed to be present and the tool being run.
  *
- *                SEVERITY     WHACK   PREFIX
- *   log        LOG_WARNING     -      state
- *   debug      LOG_DEBUG       -      "| "
- *   log_whack  LOG_WARNING    yes     state
- *   error      LOG_ERR         -      ERROR ..
- *   whack         -           yes     NNN
- *   file          -            -       -
+ *                           PLUTO
+ *              SEVERITY  WHACK  PREFIX   TOOLS
+ *   default    WARNING    yes    state     -v
+ *   log        WARNING     -     state     -v
+ *   debug      DEBUG       -     "| "     debug?
+ *   error      ERR         -    ERROR     yes
+ *   whack         -       yes    NNN      n/a?
+ *   file          -        -      -        -
  *
  * The streams will then add additional prefixes as required.  For
  * instance, the log_whack stream will prefix a timestamp when sending
  * to a file (optional), and will prefix NNN(RC) when sending to
  * whack.
  *
- * For tools, the log stream goes to STDERR when enabled; and the
- * debug stream goes to STDERR conditional on debug flags.
+ * For tools, the default and log streams go to STDERR when enabled;
+ * and the debug stream goes to STDERR conditional on debug flags.
+ * Should the whack stream go to stdout?
  *
- * Return size_t - the number of bytes written - so that
+ * As needed, return size_t - the number of bytes written - so that
  * implementations have somewhere to send values that should not be
  * ignored; for instance fwrite() :-/
  */
 
+void lswlog_to_default_streams(struct lswlog *buf, enum rc_type rc);
 void lswlog_to_log_stream(struct lswlog *buf);
 void lswlog_to_debug_stream(struct lswlog *buf);
 void lswlog_to_error_stream(struct lswlog *buf);
-void lswlog_to_log_whack_stream(struct lswlog *buf, enum rc_type rc);
 void lswlog_to_whack_stream(struct lswlog *buf);
 size_t lswlog_to_file_stream(struct lswlog *buf, FILE *file);
 
 
 /*
- * Log to the main log and, at level RC, to the whack log.
+ * Log to the default stream(s):
+ *
+ * - for pluto this means 'syslog', and when connected, whack.
+ *
+ * - for standalone tools, this means stderr, but only when enabled.
+ *
+ * There are two variants, the first specify the RC (prefix sent to
+ * whack), while the second default RC to RC_LOG.
+ *
+ * XXX: even though the the name loglog() gives the impression that
+ * it, and not plog(), needs to be used when double logging (to both
+ * 'syslog' and whack), it does not.  Hence LSWLOG_RC().
  */
-
-#define loglog	libreswan_loglog
-extern void libreswan_loglog(enum rc_type, const char *fmt, ...) PRINTF_LIKE(2);
-
-#define LSWLOG_LOG_WHACK(RC, BUF)					\
-	LSWLOG_(true, BUF,						\
-		lswlog_log_prefix(BUF),					\
-		lswlog_to_log_whack_stream(BUF, RC))
-
-
-/*
- * Log to the main log, and at level RC_LOG, to the whack log.
- */
-
-#define plog	libreswan_log
-/* signature needs to match printf() */
-extern int libreswan_log(const char *fmt, ...) PRINTF_LIKE(1);
 
 void lswlog_log_prefix(struct lswlog *buf);
 
-#define LSWLOG(BUF)				\
-	LSWLOG_LOG_WHACK(RC_LOG, BUF)
+extern void libreswan_log_rc(enum rc_type, const char *fmt, ...) PRINTF_LIKE(2);
+#define loglog	libreswan_log_rc
 
+#define LSWLOG_RC(RC, BUF)						\
+	LSWLOG_(true, BUF,						\
+		lswlog_log_prefix(BUF),					\
+		lswlog_to_default_streams(BUF, RC))
+
+/* signature needs to match printf() */
+extern int libreswan_log(const char *fmt, ...) PRINTF_LIKE(1);
+#define plog	libreswan_log
+
+#define LSWLOG(BUF) LSWLOG_RC(RC_LOG, BUF)
 
 /*
  * Log to the main log stream, but _not_ the whack log stream.
@@ -520,10 +521,6 @@ char *lswlog_string(void)
 /*
  * Log an expectation failure message to the error streams.  That is
  * the main log (level LOG_ERR) and whack log (level RC_LOG_SERIOUS).
- *
- * Note that, for pexpect(EXPRESSION), the expanded ASSERTION is not
- * wrapped in parenthesis as doing that suppresses the warning -Wparen
- * (i.e., assignment in an expression).
  */
 
 #if 0
@@ -535,14 +532,25 @@ void lswlog_pexpect(void *p)
 }
 #endif
 
-bool libreswan_pexpect(const char *func,
+void libreswan_pexpect_fail(const char *func,
 		       const char *file, unsigned long line,
 		       const char *assertion);
 
+/*
+ * Do not wrap ASSERTION in parentheses as it will suppress the
+ * warning for 'foo = bar'.
+ *
+ * Because static analizer tools are easily confused, explicitly
+ * return the assertion result.
+ */
 #define pexpect(ASSERTION)						\
-	(ASSERTION ? true : libreswan_pexpect(__func__,			\
-					      PASSERT_BASENAME, __LINE__, \
-					      #ASSERTION))
+	({								\
+		bool assertion__ = ASSERTION;				\
+		if (!assertion__)					\
+			libreswan_pexpect_fail(__func__,		\
+			      PASSERT_BASENAME, __LINE__, #ASSERTION);	\
+		assertion__; /* result */				\
+	})
 
 void lswlog_pexpect_prefix(struct lswlog *buf);
 void lswlog_pexpect_suffix(struct lswlog *buf, const char *func,

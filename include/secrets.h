@@ -22,22 +22,18 @@
 #ifndef _SECRETS_H
 #define _SECRETS_H
 
-#include "id.h"
-
 #include <nss.h>
 #include <pk11pub.h>
+
+#include "lswcdefs.h"
 #include "x509.h"
+#include "id.h"
+#include "err.h"
 #include "realtime.h"
+#include "ckaid.h"
 
 struct state;	/* forward declaration */
 struct secret;	/* opaque definition, private to secrets.c */
-
-/*
- * For rationale behind *_t? Blame chunk_t.
- */
-typedef struct {
-	SECItem *nss;
-} ckaid_t;
 
 struct RSA_public_key {
 	char keyid[KEYID_BUF];	/* see ipsec_keyblobtoid(3) */
@@ -154,8 +150,6 @@ struct private_key_stuff {
 
 	chunk_t ppk;
 	chunk_t ppk_id;
-
-	char *filename;
 };
 
 extern struct private_key_stuff *lsw_get_pks(struct secret *s);
@@ -196,24 +190,8 @@ struct pubkey_list {
 	struct pubkey_list *next;
 };
 
-/* struct used to prompt for a secret passphrase
- * from a console with file descriptor fd
- */
-#define MAX_PROMPT_PASS_TRIALS	5
-#define PROMPT_PASS_LEN		64
-
-typedef void (*pass_prompt_func)(int mess_no, const char *message,
-				 ...) PRINTF_LIKE (2);
-
-typedef struct {
-	char secret[PROMPT_PASS_LEN];
-	pass_prompt_func prompt;
-	int fd;
-} prompt_pass_t;
-
 extern struct pubkey_list *pubkeys;	/* keys from ipsec.conf */
 
-extern struct pubkey *public_key_from_rsa(const struct RSA_public_key *k);
 extern struct pubkey_list *free_public_keyentry(struct pubkey_list *p);
 extern void free_public_keys(struct pubkey_list **keys);
 extern void free_remembered_public_keys(void);
@@ -221,13 +199,6 @@ extern void delete_public_keys(struct pubkey_list **head,
 			       const struct id *id,
 			       enum pubkey_alg alg);
 extern void form_keyid(chunk_t e, chunk_t n, char *keyid, unsigned *keysize);
-
-bool ckaid_starts_with(ckaid_t ckaid, const char *start);
-char *ckaid_as_string(ckaid_t ckaid);
-err_t form_ckaid_rsa(chunk_t modulus, ckaid_t *ckaid);
-err_t form_ckaid_nss(const SECItem *const nss_ckaid, ckaid_t *ckaid);
-void freeanyckaid(ckaid_t *ckaid);
-void DBG_log_ckaid(const char *prefix, ckaid_t ckaid);
 
 extern struct pubkey *reference_key(struct pubkey *pk);
 extern void unreference_key(struct pubkey **pkp);
@@ -265,7 +236,6 @@ extern struct secret *lsw_find_secret_by_id(struct secret *secrets,
 					    const struct id *his_id,
 					    bool asym);
 
-extern err_t lsw_update_dynamic_ppk_secret(char *fn);
 extern struct secret *lsw_get_ppk_by_id(struct secret *secrets, chunk_t ppk_id);
 
 extern void lock_certs_and_keys(const char *who);
