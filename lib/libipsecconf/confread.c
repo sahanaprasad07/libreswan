@@ -1382,6 +1382,18 @@ static bool load_conn(
 			else if (streq(val, "rsa-sha2_512")) {
 				conn->policy |= POLICY_RSASIG;
 				conn->sighash_policy |= POL_SIGHASH_SHA2_384;
+			}
+			else if (streq(val, "ecdsa") || streq(val, "ecdsa-sha2_256")) {
+				conn->policy |= POLICY_ECDSA;
+				conn->sighash_policy |= POL_SIGHASH_SHA2_256;
+			}
+			else if (streq(val, "ecdsa-sha2_384")) {
+				conn->policy |= POLICY_ECDSA;
+				conn->sighash_policy |= POL_SIGHASH_SHA2_384;
+			}
+			else if (streq(val, "ecdsa-sha2_512")) {
+				conn->policy |= POLICY_ECDSA;
+				conn->sighash_policy |= POL_SIGHASH_SHA2_512;
 			} else {
 				*perr = "connection authby= value is unknown";
 				return TRUE;

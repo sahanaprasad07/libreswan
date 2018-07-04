@@ -226,8 +226,8 @@ if userland == "libreswan" or userland == "openswan" or userland == "strongswan"
         if args.userland == "strongswan":
             # check version and fail early
             output = subprocess.getoutput("strongswan version")
-            if not "U5.6.0" in output:
-                sys.exit("strongswan 5.6.0 must be installed")
+            if not "U5.6.1" in output:
+                sys.exit("strongswan 5.6.1 must be installed")
             # required to write log file in /tmp
             subprocess.getoutput("setenforce 0")
             strongswanconf = "%s/%sstrongswan.conf" % (testpath, hostname)
@@ -392,7 +392,7 @@ if userland in ("libreswan", "openswan"):
             # is pw needed?
             shell("/usr/bin/certutil -M -n 'Libreswan test CA for mainca - Libreswan' -d sql:/etc/ipsec.d/ -t 'CT,,'%s" % (util_pw))
 
-            for certname in ("west", "east", "road", "north", "hashsha2", "west-ec", "east-ec", "nic"):
+            for certname in ("west", "east", "road", "north", "hashsha2", "west-ec", "east-ec", "nic", "park"):
                 if not hostname in certname:
                     shell("/usr/bin/certutil -A -n %s -t 'P,,' -d sql:/etc/ipsec.d -a -i /testing/x509/certs/%s.crt%s" %
                           (certname, certname, util_pw))

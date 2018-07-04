@@ -296,7 +296,7 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 		PORT_SetError(SEC_ERROR_NO_MEMORY);
 		return "11" "NSS error: Not enough memory to create publicKey";
 	}
-
+//SAHANA ECDSA
 	publicKey->arena = arena;
 	publicKey->keyType = rsaKey;
 	publicKey->pkcs11Slot = NULL;
@@ -417,6 +417,105 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 
 	return NULL;
 }
+
+
+
+err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
+			       const u_char *hash_val, size_t hash_len,
+			       const u_char *sig_val, size_t sig_len,
+			       bool version,
+			       enum notify_payload_hash_algorithms rsa_hash_algo)
+{
+	SECKEYPublicKey *publicKey;
+	PRArenaPool *arena;
+	SECStatus retVal;
+	SECItem nss_pub;
+	SECItem signature, data;
+	(void) version;
+	(void) rsa_hash_algo;
+
+	/* Converting n and e to form public key in SECKEYPublicKey data structure */
+
+	arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
+	if (arena == NULL) {
+		PORT_SetError(SEC_ERROR_NO_MEMORY);
+		return "10" "NSS error: Not enough memory to create arena";
+	}
+
+	publicKey = (SECKEYPublicKey *)
+		PORT_ArenaZAlloc(arena, sizeof(SECKEYPublicKey));
+	if (publicKey == NULL) {
+		PORT_FreeArena(arena, PR_FALSE);
+		PORT_SetError(SEC_ERROR_NO_MEMORY);
+		return "11" "NSS error: Not enough memory to create publicKey";
+	}
+//SAHANA ECDSA
+	publicKey->arena = arena;
+	publicKey->keyType = ecKey;
+	publicKey->pkcs11Slot = NULL;
+	publicKey->pkcs11ID = CK_INVALID_HANDLE;
+
+	/* make a local copy.  */
+	chunk_t pub = clone_chunk(k->pub, "public value");
+
+	/* Converting n and e to nss_n and nss_e */
+	nss_pub.data = pub.ptr;
+	nss_pub.len = (unsigned int)pub.len;
+	nss_pub.type = siBuffer;
+
+
+	retVal = SECITEM_CopyItem(arena, &publicKey->u.ec.publicValue, &nss_pub);
+
+	if (retVal != SECSuccess) {
+		pfree(pub.ptr);
+		SECKEY_DestroyPublicKey(publicKey);
+		return "12NSS error: Not able to copy modulus or exponent or both while forming SECKEYPublicKey structure";
+	}
+	signature.type = siBuffer;
+	signature.data = DISCARD_CONST(unsigned char *, sig_val);
+	signature.len  = (unsigned int)sig_len;
+
+	data.len = (unsigned int)sig_len;
+	data.data = alloc_bytes(data.len, "NSS decrypted signature");
+	data.type = siBuffer;
+
+	if (rsa_hash_algo == 0 /* ikev1*/ || 
+				rsa_hash_algo == IKEv2_AUTH_HASH_SHA1 /* old style rsa with SHA1*/) {
+
+		data.len = (unsigned int)sig_len;
+		data.data = alloc_bytes(data.len, "NSS decrypted signature");
+
+		if (PK11_VerifyRecover(publicKey, &signature, &data,
+				       lsw_return_nss_password_file_info()) ==
+		   SECSuccess ) {
+		       DBG(DBG_CRYPT,
+			   DBG_dump("NSS ECDSA verify: decrypted sig: ", data.data,
+				     data.len));
+		} else {
+			DBG(DBG_CRYPT,
+			    DBG_log("NSS ECDSA verify: decrypting signature is failed"));
+			return "13" "NSS error: Not able to decrypt";
+		}
+		if (!memeq(data.data + data.len - hash_len, hash_val, hash_len)) {
+			pfree(data.data);
+			loglog(RC_LOG_SERIOUS, "ECDSA Signature NOT verified");
+			return "14" "NSS error: Not able to verify";
+		}
+
+	}
+
+	DBG(DBG_CRYPT,
+	    DBG_dump("NSS ECDSA verify: hash value: ", hash_val, hash_len));
+
+	pfree(data.data);
+	pfree(pub.ptr);
+	SECKEY_DestroyPublicKey(publicKey);
+
+	DBG(DBG_CRYPT, DBG_log("ECDSA Signature verified"));
+
+	return NULL;
+}
+
 
 /*
  * Check signature against all RSA public keys we can find.
@@ -540,11 +639,13 @@ stf_status RSA_check_signature_gen(struct state *st,
 			});
 
 			int pl;	/* value ignored */
-
-			if (key->alg == PUBKEY_ALG_RSA &&
+//SAHANA ECDSA
+		//	if (key->alg == PUBKEY_ALG_RSA &&
+			if (key->alg == PUBKEY_ALG_ECDSA &&
 			    same_id(&c->spd.that.id, &key->id) &&
 			    trusted_ca_nss(key->issuer, c->spd.that.ca, &pl))
 			{
+				libreswan_log("came to verify ECDSA");
 				DBG(DBG_CONTROL, {
 					char buf[IDTOA_BUF];
 					dntoa_or_null(buf, IDTOA_BUF,
@@ -645,9 +746,9 @@ static struct secret *lsw_get_secret(const struct connection *c,
 	    DBG_log("started looking for secret for %s->%s of kind %s",
 		    idme, idhim,
 		    enum_name(&pkk_names, kind)));
-
+//SAHANA ECDSA
 	/* is there a certificate assigned to this connection? */
-	if (kind == PKK_RSA && c->spd.this.cert.ty == CERT_X509_SIGNATURE &&
+	if (kind == (PKK_RSA || PKK_ECDSA) && c->spd.this.cert.ty == CERT_X509_SIGNATURE &&
 			c->spd.this.cert.u.nss_cert != NULL) {
 		/* Must free MY_PUBLIC_KEY */
 		struct pubkey *my_public_key = allocate_RSA_public_key_nss(
@@ -658,7 +759,7 @@ static struct secret *lsw_get_secret(const struct connection *c,
 			free_public_key(my_public_key);
 			return NULL;
 		}
-
+//look for saved secrets
 		best = lsw_find_secret_by_public_key(pluto_secrets,
 						     my_public_key, kind);
 		if (best != NULL) {
@@ -874,6 +975,12 @@ const struct RSA_private_key *get_RSA_private_key(const struct connection *c)
 	struct secret *s = lsw_get_secret(c,
 					  &c->spd.this.id, &c->spd.that.id,
 					  PKK_RSA, TRUE);
+/*SAHANA ECDSA
+	struct secret *s = lsw_get_secret(c,
+					  &c->spd.this.id, &c->spd.that.id,
+					  PKK_ECDSA, TRUE);
+ *	
+*/	
 	const struct private_key_stuff *pks = NULL;
 
 	if (s != NULL)
@@ -885,8 +992,10 @@ const struct RSA_private_key *get_RSA_private_key(const struct connection *c)
 		else
 			DBG_log("rsa key %s found",
 				pks->u.RSA_private_key.pub.keyid);
+//SAHANA ECDSA			pks->u.ECDSA_private_key.pub.keyid);
 	});
 	return s == NULL ? NULL : &pks->u.RSA_private_key;
+//	return s == NULL ? NULL : &pks->u.ECDSA_private_key;
 }
 
 /*
@@ -942,6 +1051,11 @@ err_t add_public_key(const struct id *id,
 			pfree(pk);
 			return ugh;
 		}
+	}
+	break;
+	case PUBKEY_ALG_ECDSA:
+	{
+	
 	}
 	break;
 	default:

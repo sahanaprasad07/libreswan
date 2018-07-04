@@ -909,6 +909,7 @@ static bool extract_end(struct end *dst, const struct whack_end *src,
 		CERTCertificate *cert = get_cert_by_nickname_from_nss(src->pubkey);
 		load_end_nss_certificate(which, cert, dst, "nickname",
 					 src->pubkey);
+		libreswan_log("SAHANA came here to load certs with nickname");
 		break;
 	}
 	case WHACK_PUBKEY_CKAID: {
@@ -926,6 +927,7 @@ static bool extract_end(struct end *dst, const struct whack_end *src,
 		} else {
 			CERTCertificate *cert = get_cert_by_ckaid_from_nss(src->pubkey);
 			load_end_nss_certificate(which, cert, dst, "CKAID", src->pubkey);
+			libreswan_log("SAHANA came here to load certs with CKAID");
 		}
 		break;
 	}
@@ -1442,6 +1444,13 @@ void add_connection(const struct whack_message *wm)
 						conflict = TRUE;
 					}
 					break;
+				case AUTH_ECDSA:
+					if (auth_pol != POLICY_ECDSA && auth_pol != LEMPTY) {
+					libreswan_log("came in AUTH_ECDSA");
+						loglog(RC_FATAL, "leftauthby=ecdsa but authby= is not ecdsa");
+						conflict = TRUE;
+					}
+					break;
 				case AUTH_NULL:
 					if (auth_pol != POLICY_AUTH_NULL && auth_pol != LEMPTY) {
 						loglog(RC_FATAL, "leftauthby=null but authby= is not null");
@@ -1449,7 +1458,9 @@ void add_connection(const struct whack_message *wm)
 					}
 					break;
 				case AUTH_NEVER:
+					libreswan_log("came in AUTH_NEVER");
 					if ((wm->policy & POLICY_ID_AUTH_MASK) != LEMPTY) {
+						libreswan_log("came in AUTH_NEVER");
 						loglog(RC_FATAL, "leftauthby=never but authby= is not never - double huh?");
 						conflict = TRUE;
 					}
@@ -1538,7 +1549,7 @@ void add_connection(const struct whack_message *wm)
 		}
 #endif
 		DBG(DBG_CONTROL,
-			DBG_log("Added new connection %s with policy %s%s",
+			DBG_log("Added new connection_sahana %s with policy %s%s",
 				c->name,
 				prettypolicy(c->policy),
 				NEVER_NEGOTIATE(c->policy) ? "+NEVER_NEGOTIATE" : ""));
@@ -1741,6 +1752,7 @@ void add_connection(const struct whack_message *wm)
 				if ((c->policy & POLICY_ID_AUTH_MASK) == LEMPTY) {
 						/* authby= was also not specified - fill in default */
 						c->policy |= POLICY_AUTH_NEVER;
+						libreswan_log("Policy auth never was set??");
 						DBG(DBG_CONTROL, DBG_log("No AUTH policy was set for type=passthrough - defaulting to %s",
 							prettypolicy(c->policy & POLICY_ID_AUTH_MASK)));
 				}
@@ -1809,6 +1821,8 @@ void add_connection(const struct whack_message *wm)
 		if (wm->left.authby == AUTH_UNSET && wm->right.authby == AUTH_UNSET) {
 			if (c->policy & POLICY_RSASIG)
 				c->spd.this.authby = c->spd.that.authby = AUTH_RSASIG;
+			else if (c->policy & POLICY_ECDSA)
+				c->spd.this.authby = c->spd.that.authby = AUTH_ECDSA;
 			else if (c->policy & POLICY_PSK)
 				c->spd.this.authby = c->spd.that.authby = AUTH_PSK;
 			else if (c->policy & POLICY_AUTH_NULL)
@@ -1820,6 +1834,9 @@ void add_connection(const struct whack_message *wm)
 			switch (wm->left.authby) {
 			case AUTH_RSASIG:
 				c->policy |= POLICY_RSASIG;
+				break;
+			case AUTH_ECDSA:
+				c->policy |= POLICY_ECDSA;
 				break;
 			case AUTH_PSK:
 				c->policy |= POLICY_PSK;
@@ -3126,7 +3143,7 @@ struct connection *refine_host_connection(const struct state *st,
 
 	const chunk_t *psk = NULL;
 	const struct RSA_private_key *my_RSA_pri = NULL;
-
+//SAHANA ECDSA
 	if (initiator)
 	{
 		switch (this_authby) {

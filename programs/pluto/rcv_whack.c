@@ -423,8 +423,10 @@ void whack_process(int whackfd, const struct whack_message *const m)
 	if (m->whack_crash)
 		delete_states_by_peer(&m->whack_crash_peer);
 
-	if (m->whack_connection)
+	if (m->whack_connection)	{
+		libreswan_log("called add_connection");
 		add_connection(m);
+	}
 
 	/* update any socket buffer size before calling listen */
 	if (m->ike_buf_size != 0) {

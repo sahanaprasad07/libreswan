@@ -85,6 +85,21 @@ struct RSA_private_key {
 	struct RSA_public_key pub;
 };
 
+/*SAHANA ECDSA*/
+
+struct ECDSA_public_key {
+	int size;
+	chunk_t pub;
+	chunk_t enc;
+	ckaid_t ckaid;
+
+};
+
+
+struct ECDSA_private_key {
+	struct ECDSA_public_key pub;
+};
+
 extern void free_RSA_public_content(struct RSA_public_key *rsa);
 
 err_t rsa_pubkey_to_rfc_resource_record(chunk_t exponent, chunk_t modulus, chunk_t *rr);
@@ -97,6 +112,22 @@ err_t pack_RSA_public_key(const struct RSA_public_key *rsa, chunk_t *pubkey);
 err_t unpack_RSA_public_key(struct RSA_public_key *rsa, const chunk_t *pubkey);
 
 void DBG_log_RSA_public_key(const struct RSA_public_key *rsa);
+/*
+ *
+ *
+ *
+struct ECDSA_public_key {
+
+
+}
+ *
+ *
+*/
+
+
+
+
+
 
 struct private_key_stuff {
 	enum PrivateKeyKind kind;
@@ -117,6 +148,7 @@ struct private_key_stuff {
 	union {
 		chunk_t preshared_secret;
 		struct RSA_private_key RSA_private_key;
+		struct ECDSA_private_key ECDSA_private_key;
 		/* struct smartcard *smartcard; */
 	} u;
 
@@ -154,6 +186,8 @@ struct pubkey {
 	enum pubkey_alg alg;
 	union {
 		struct RSA_public_key rsa;
+		struct ECDSA_public_key ecdsa;
+//SAHANA
 	} u;
 };
 

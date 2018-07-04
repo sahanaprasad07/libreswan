@@ -108,7 +108,7 @@ static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t sighash_pol
 	chunk_t hash;
 
 	if (sighash_policy & POL_SIGHASH_SHA2_256) {
-		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_256);
+		hash_algo_to_send = htons(IKEv2_AUTH_HASH_SHA2_384);
 		setchunk(hash, (void*)&hash_algo_to_send, RFC_7427_HASH_ALGORITHM_VALUE);
 	}
 	else if (sighash_policy & POL_SIGHASH_SHA2_384) {
@@ -142,9 +142,6 @@ static bool negotiate_hash_algo_from_notification(struct payload_digest *p, stru
 
 	for (i = 0; i < num_of_hash_algo; i++) {
 		switch (ntohs(h_value[i]))  {
-		case IKEv2_AUTH_HASH_SHA1:
-			st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_SHA1;
-			break;
 		case IKEv2_AUTH_HASH_SHA2_256:
 			st->st_hash_negotiated |= NEGOTIATE_AUTH_HASH_SHA2_256;
 			break;
@@ -540,8 +537,10 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 	pb_stream *pbs,
 	const enum keyword_authby that_authby)
 {
-	unsigned char check_rsa_pss_sha256_blob[ASN1_SHA2_256_RSA_PSS_OID_SIZE] = {0x0};
-	unsigned char check_length_rsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
+	//unsigned char check_rsa_pss_sha256_blob[ASN1_SHA2_256_RSA_PSS_OID_SIZE] = {0x0};
+	//unsigned char check_length_rsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
+	unsigned char check_ecdsa_sha256_blob[ASN1_SHA2_256_ECDSA_OID_SIZE] = {0x0};
+	unsigned char check_length_ecdsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
 	switch (atype) {
 	case IKEv2_AUTH_RSA:
 	{
@@ -606,7 +605,7 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 
 	case IKEv2_AUTH_DIGSIG:
 	{
-		if (!LIN(POLICY_RSASIG, st->st_connection->policy) &&  that_authby != AUTH_RSASIG) {
+	/*	if (!LIN(POLICY_RSASIG, st->st_connection->policy) &&  that_authby != AUTH_RSASIG) {
 			libreswan_log("Peer attempted Authentication through Digital Signature but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
@@ -621,6 +620,22 @@ static bool v2_check_auth(enum ikev2_auth_method atype,
 				"Algorithm Identifier value"))
 			return FALSE;
 		if (!memeq(check_rsa_pss_sha256_blob, sha256_rsa_pss_oid_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE))
+			return FALSE;*/
+		if (!LIN(POLICY_ECDSA, st->st_connection->policy) &&  that_authby != AUTH_ECDSA) {
+			libreswan_log("Peer attempted Authentication through Digital Signature but we want %s",
+				enum_name(&ikev2_asym_auth_name, that_authby));
+			return FALSE;
+		}
+		if (!in_raw(check_length_ecdsa_sha2_blob, ASN1_LEN_ALGO_IDENTIFIER, pbs,
+				"Algorithm Identifier length"))
+			return FALSE;
+		if (!memeq(check_length_ecdsa_sha2_blob, len_sha256_ecdsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER))
+			return FALSE;
+
+		if (!in_raw(check_ecdsa_sha256_blob, ASN1_SHA2_256_ECDSA_OID_SIZE, pbs,
+				"Algorithm Identifier value"))
+			return FALSE;
+		if (!memeq(check_ecdsa_sha256_blob, sha256_ecdsa_oid_blob, ASN1_SHA2_256_ECDSA_OID_SIZE))
 			return FALSE;
 
 		stf_status authstat = ikev2_verify_rsa_hash(
@@ -1034,7 +1049,7 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md UNUSED,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
 	if (!DBGP(IMPAIR_OMIT_HASH_NOTIFY_REQUEST)) {
-		if ((c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+		if ((c->policy & POLICY_RSASIG || c->policy & POLICY_ECDSA) && (c->sighash_policy != POL_SIGHASH_NONE)) {
 			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
@@ -1231,7 +1246,7 @@ stf_status ikev2_parent_inI1outR1(struct state *null_st, struct msg_digest *md)
 	}
 
 	/* authentication policy alternatives in order of decreasing preference */
-	static const lset_t policies[] = { POLICY_RSASIG, POLICY_PSK, POLICY_AUTH_NULL };
+	static const lset_t policies[] = { POLICY_ECDSA, POLICY_RSASIG, POLICY_PSK, POLICY_AUTH_NULL };
 
 	lset_t policy;
 	struct connection *c;
@@ -1648,7 +1663,8 @@ static stf_status ikev2_parent_inI1outR1_continue_tail(struct state *st,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
 	if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
-		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG || c->policy & POLICY_ECDSA) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+		libreswan_log("received hash so sending hash");
 			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
@@ -2894,6 +2910,9 @@ static stf_status ikev2_send_auth(struct connection *c,
 		a.isaa_type = (pst->st_seen_hashnotify) ?
 			IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA;
 		break;
+	case AUTH_ECDSA:
+		a.isaa_type = IKEv2_AUTH_DIGSIG;
+		break;
 	case AUTH_PSK:
 		a.isaa_type = IKEv2_AUTH_PSK;
 		break;
@@ -2932,13 +2951,24 @@ static stf_status ikev2_send_auth(struct connection *c,
 		break;
 	case IKEv2_AUTH_DIGSIG:
 		if (pst->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA2_256) {
-			if (!out_raw(len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
+		/*	if (!out_raw(len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
 				"Length of the ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
 					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID length");
 					return STF_INTERNAL_ERROR;
 			}
 
 			if (!out_raw(sha256_rsa_pss_oid_blob, ASN1_SHA2_256_RSA_PSS_OID_SIZE, &a_pbs,
+				"OID of ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
+					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID");
+					return STF_INTERNAL_ERROR;
+			}*/
+			if (!out_raw(len_sha256_ecdsa_oid_blob, ASN1_LEN_ALGO_IDENTIFIER, &a_pbs,
+				"Length of the ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
+					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID length");
+					return STF_INTERNAL_ERROR;
+			}
+
+			if (!out_raw(sha256_ecdsa_oid_blob, ASN1_SHA2_256_ECDSA_OID_SIZE, &a_pbs,
 				"OID of ASN.1 Algorithm Identifier rsa-pss-sha2-256")) {
 					loglog(RC_LOG_SERIOUS, "DigSig: failed to emit RSA-PSS-SHA2-256 OID");
 					return STF_INTERNAL_ERROR;

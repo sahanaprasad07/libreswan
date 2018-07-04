@@ -108,6 +108,8 @@ static const struct fld RSA_private_field[] = {
 
 static err_t lsw_process_psk_secret(chunk_t *psk);
 static err_t lsw_process_rsa_secret(struct RSA_private_key *rsak);
+//SAHANA ECDSA : used only for raw keys
+//static err_t lsw_process_ecdsa_secret(struct ECDSA_private_key *ecdsak);
 static err_t lsw_process_ppk_static_secret(chunk_t *ppk, chunk_t *ppk_id);
 static err_t lsw_process_ppk_dynamic_secret(chunk_t *ppk, chunk_t *ppk_id, char **filename);
 static char *build_new_offset(int offset_len, int offset);
@@ -250,12 +252,12 @@ void form_keyid(chunk_t e, chunk_t n, char *keyid, unsigned *keysize)
 	/* return the RSA modulus size in octets */
 	*keysize = n.len;
 }
-
-static void form_keyid_from_nss(SECItem e, SECItem n, char *keyid,
-				unsigned *keysize)
-{
-	/* eliminate leading zero byte in modulus from ASN.1 coding */
-	if (*n.data == 0x00) {
+//SAHANA ECDSA
+///static void form_keyid_from_nss(SECItem e, SECItem n, char *keyid,
+//				unsigned *keysize)
+//{
+	 /*eliminate leading zero byte in modulus from ASN.1 coding */
+//	if (*n.data == 0x00) {
 		/*
 		 * The "adjusted" length of modulus n in octets:
 		 * [RSA_MIN_OCTETS, RSA_MAX_OCTETS].
@@ -272,19 +274,19 @@ static void form_keyid_from_nss(SECItem e, SECItem n, char *keyid,
 		 * - but wouldn't that be redundant?  The direct n==n
 		 * test would pick up the difference.
 		 */
-		DBG(DBG_CRYPT, DBG_log("XXX: adjusted modulus length %u->%u",
-				       n.len, n.len - 1));
-		n.data++;
-		n.len--;
-	}
+//		DBG(DBG_CRYPT, DBG_log("XXX: adjusted modulus length %u->%u",
+//				       n.len, n.len - 1));
+//		n.data++;
+//		n.len--;
+//	}
 
 	/* form the FreeS/WAN keyid */
-	keyid[0] = '\0';	/* in case of splitkeytoid failure */
-	splitkeytoid(e.data, e.len, n.data, n.len, keyid, KEYID_BUF);
+//	keyid[0] = '\0';	/* in case of splitkeytoid failure */
+//	splitkeytoid(e.data, e.len, n.data, n.len, keyid, KEYID_BUF);
 
 	/* return the RSA modulus size in octets */
-	*keysize = n.len;
-}
+//	*keysize = n.len;
+//}
 
 void free_RSA_public_content(struct RSA_public_key *rsa)
 {
@@ -1648,6 +1650,14 @@ struct pubkey *allocate_RSA_public_key_nss(CERTCertificate *cert)
 		}
 		e = clone_secitem_as_chunk(nsspk->u.rsa.publicExponent, "e");
 		n = clone_secitem_as_chunk(nsspk->u.rsa.modulus, "n");
+/*SAHANA ECDSA
+ *
+ * NSS API to extract public key is independent of key type
+ *		pub = clone_secitem_as_chunk(nsspk->u.ec.publicValue, "pub");
+ *		enc = eclone_secitem_as_chunk(nsspk->u.ec.encoding, "enc");
+ *
+ *
+*/
 		SECKEY_DestroyPublicKey(nsspk);
 	}
 	/* free: ckaid, n, e */
@@ -1656,6 +1666,15 @@ struct pubkey *allocate_RSA_public_key_nss(CERTCertificate *cert)
 	pk->u.rsa.e = e;
 	pk->u.rsa.n = n;
 	pk->u.rsa.ckaid = ckaid;
+
+/* SAHANA ECDSA
+ * NSS API to get CKAID is independent of key type
+	pk->u.ecdsa.pub = pub;
+	pk->u.ecdsa.enc = enc;
+	pk->u.ecdsaa.ckaid = ckaid;
+ *
+ *
+*/
 	/*
 	 * based on comments in form_keyid, the modulus length
 	 * returned by NSS might contain a leading zero and this
@@ -1673,8 +1692,9 @@ struct pubkey *allocate_RSA_public_key_nss(CERTCertificate *cert)
 
 	return pk;
 }
-
-static err_t add_ckaid_to_rsa_privkey(struct RSA_private_key *rsak,
+//SAHANA ECDSA
+//static err_t add_ckaid_to_rsa_privkey(struct RSA_private_key *rsak,
+static err_t add_ckaid_to_rsa_privkey(struct ECDSA_private_key *ecdsak,
 				      CERTCertificate *cert)
 {
 	err_t ugh = NULL;
@@ -1719,19 +1739,25 @@ static err_t add_ckaid_to_rsa_privkey(struct RSA_private_key *rsak,
 		ugh = "NSS: no CKAID data";
 		goto out;
 	}
-
-	clonetochunk(rsak->pub.e, pubk->u.rsa.publicExponent.data,
+//SAHANA ECDSA
+/*	clonetochunk(rsak->pub.e, pubk->u.rsa.publicExponent.data,
 		     pubk->u.rsa.publicExponent.len, "e");
 	clonetochunk(rsak->pub.n, pubk->u.rsa.modulus.data,
 		     pubk->u.rsa.modulus.len, "n");
-	ugh = form_ckaid_nss(certCKAID, &rsak->pub.ckaid);
+	ugh = form_ckaid_nss(certCKAID, &rsak->pub.ckaid);*/
+	clonetochunk(ecdsak->pub.pub, pubk->u.ec.publicValue.data,
+		     pubk->u.ec.publicValue.len, "pub");
+//	clonetochunk(ecdsak->pub.enc, pubk->u.ec.encoding.data,
+//		     pubk->u.ec.encoding.len, "n");
+	//ugh = form_ckaid_nss(certCKAID, &rsak->pub.ckaid);
+	ugh = form_ckaid_nss(certCKAID, &ecdsak->pub.ckaid);
 	if (ugh) {
 		/* let caller clean up mess */
 		goto out;
 	}
-
-	form_keyid_from_nss(pubk->u.rsa.publicExponent, pubk->u.rsa.modulus,
-			rsak->pub.keyid, &rsak->pub.k);
+	libreswan_log("add_ckaid_to_rsa_privkey");
+//	form_keyid_from_nss(pubk->u.rsa.publicExponent, pubk->u.rsa.modulus,
+//			rsak->pub.keyid, &rsak->pub.k);
 
 out:
 	if (certCKAID != NULL) {
@@ -1743,59 +1769,73 @@ out:
 	return ugh;
 }
 
-static err_t lsw_extract_nss_cert_privkey(struct RSA_private_key *rsak,
+//static err_t lsw_extract_nss_cert_privkey(struct RSA_private_key *rsak,
+static err_t lsw_extract_nss_cert_privkey(struct ECDSA_private_key *ecdsak,
 					  CERTCertificate *cert)
 {
 	err_t ugh = NULL;
-
+	libreswan_log("came into lsw_extract_nss_cert_privkey");
 	DBG(DBG_CRYPT,
 	    DBG_log("extracting the RSA private key for %s", cert->nickname));
 
-	if ((ugh = add_ckaid_to_rsa_privkey(rsak, cert)) != NULL) {
+	//if ((ugh = add_ckaid_to_rsa_privkey(rsak, cert)) != NULL) {
+	if ((ugh = add_ckaid_to_rsa_privkey(ecdsak, cert)) != NULL) {
 		return ugh;
 	}
 
-	return RSA_public_key_sanity(rsak);
+//	return RSA_public_key_sanity(rsak);
+	return NULL;
 }
-
-static const struct RSA_private_key *get_nss_cert_privkey(struct secret *secrets,
+//SAHANA ECDSA
+//static const struct RSA_private_key *get_nss_cert_privkey(struct secret *secrets,
+static const struct ECDSA_private_key *get_nss_cert_privkey(struct secret *secrets,
 							  CERTCertificate *cert)
 {
 	struct secret *s = NULL;
-	const struct RSA_private_key *priv = NULL;
+	//const struct RSA_private_key *priv = NULL;
+	const struct ECDSA_private_key *priv = NULL;
 	struct pubkey *pub = allocate_RSA_public_key_nss(cert);
 	if (pub == NULL) {
 		return NULL;
 	}
 
 	for (s = secrets; s != NULL; s = s->next) {
-		if (s->pks.kind == PKK_RSA &&
+	/*	if (s->pks.kind == PKK_RSA &&
 			same_RSA_public_key(&s->pks.u.RSA_private_key.pub,
 					    &pub->u.rsa)) {
 			priv = &s->pks.u.RSA_private_key;
+			break;
+		}*/
+//function like same_ECDSA_pub_key???
+		if (s->pks.kind == PKK_ECDSA) {
+			priv = &s->pks.u.ECDSA_private_key;
+			libreswan_log("came inside ECDSA priv key PKS");
 			break;
 		}
 	}
 	free_public_key(pub);
 	return priv;
 }
-
+//SAHANA ECDSA make lsw_add_ecdsa_secret
 err_t lsw_add_rsa_secret(struct secret **secrets, CERTCertificate *cert)
 {
 	struct secret *s = NULL;
-	const struct RSA_private_key *pkey = NULL;
+//	const struct RSA_private_key *pkey = NULL;
+	const struct ECDSA_private_key *pkey = NULL;
 	err_t ugh = NULL;
-
+	libreswan_log("came inside lsw_add_rsa_secret");
 	if ((pkey = get_nss_cert_privkey(*secrets, cert)) != NULL) {
 		DBG(DBG_CONTROL, DBG_log("secrets entry for %s already exists",
 					 cert->nickname));
 		return NULL;
 	}
 	s = alloc_thing(struct secret, "secret");
-	s->pks.kind = PKK_RSA;
+	//s->pks.kind = PKK_RSA;
+	s->pks.kind = PKK_ECDSA;
 	s->pks.line = 0;
 
-	if ((ugh = lsw_extract_nss_cert_privkey(&s->pks.u.RSA_private_key,
+	//if ((ugh = lsw_extract_nss_cert_privkey(&s->pks.u.RSA_private_key,
+	if ((ugh = lsw_extract_nss_cert_privkey(&s->pks.u.ECDSA_private_key,
 						cert)) != NULL) {
 		pfree(s);
 		return ugh;

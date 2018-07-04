@@ -116,7 +116,8 @@ bool cert_key_is_rsa(CERTCertificate *cert)
 					&cert->subjectPublicKeyInfo);
 
 	if (pk != NULL) {
-		ret = SECKEY_GetPublicKeyType(pk) == rsaKey;
+	//	ret = SECKEY_GetPublicKeyType(pk) == rsaKey;
+		ret = SECKEY_GetPublicKeyType(pk) == ecKey;
 		SECKEY_DestroyPublicKey(pk);
 	}
 
@@ -572,6 +573,7 @@ static void create_cert_subjectdn_pubkey(struct pubkey **pkp,
 				       CERTCertificate *cert)
 {
 	struct id id;
+		libreswan_log("SAHANA:came here2");
 
 	id.kind = ID_DER_ASN1_DN;
 	id.name = same_secitem_as_chunk(cert->derSubject);
@@ -583,6 +585,7 @@ static void add_cert_san_pubkeys(CERTCertificate *cert)
 	generalName_t *gn = NULL;
 	generalName_t *gnt;
 
+		libreswan_log("SAHANA:came here3");
 	PRArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
 	get_pluto_gn_from_nss_cert(cert, &gn, arena);
 
@@ -629,6 +632,7 @@ void add_rsa_pubkey_from_cert(const struct id *keyid, CERTCertificate *cert)
 	{
 		struct pubkey *pk2 = NULL;
 
+		libreswan_log("SAHANA:came here1");
 		create_cert_pubkey(&pk2, keyid, cert);
 		replace_public_key(pk2);
 	}
@@ -768,6 +772,7 @@ static lsw_cert_ret pluto_process_certs(struct state *st,
 		libreswan_log("No Certificate Authority available! Certificate accepted without verification.");
 		return LSW_CERT_ID_OK;
 	} else if ((ret & VERIFY_RET_OK) && end_cert != NULL) {
+		libreswan_log("SAHANA came here4 before add_rsa_pubkey_from_cert");
 		libreswan_log("certificate verified OK: %s", end_cert->subjectName);
 		add_rsa_pubkey_from_cert(&c->spd.that.id, end_cert);
 

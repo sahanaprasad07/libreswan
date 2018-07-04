@@ -116,10 +116,10 @@ stf_status ikev2_calc_no_ppk_auth(struct connection *c, struct state *st, unsign
 		if (ikev2_calculate_rsa_hash(st, st->st_original_role, id_hash, 
 						NULL, TRUE, no_ppk_auth, IKEv2_AUTH_HASH_SHA1)) {
 						/* should be SHA2_256 ? and needs to be added in DIGSIG? */
-			if (st->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA1) {
+	//		if (st->st_hash_negotiated & NEGOTIATE_AUTH_HASH_SHA1) {
 				/* make blobs separately, and somehow combine them and no_ppk_auth
 				 * to get an actual no_ppk_auth */
-				int len = ASN1_LEN_ALGO_IDENTIFIER + ASN1_SHA2_256_RSA_PSS_OID_SIZE + no_ppk_auth->len;
+	/*			int len = ASN1_LEN_ALGO_IDENTIFIER + ASN1_SHA2_256_RSA_PSS_OID_SIZE + no_ppk_auth->len;
 				u_char *blobs = alloc_bytes(len, "bytes for blobs for AUTH_DIGSIG NO_PPK_AUTH");
 				u_char *ret = blobs;
 				memcpy(blobs, len_sha256_rsa_pss_oid_blob, ASN1_LEN_ALGO_IDENTIFIER);
@@ -130,7 +130,7 @@ stf_status ikev2_calc_no_ppk_auth(struct connection *c, struct state *st, unsign
 				chunk_t release = *no_ppk_auth;
 				setchunk(*no_ppk_auth, ret, len);
 				freeanychunk(release);
-			}
+			}*/
 		}
 		return STF_OK;
 		break;

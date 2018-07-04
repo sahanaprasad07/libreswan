@@ -140,6 +140,10 @@ static void print(struct private_key_stuff *pks,
 		pfree(ckaid);
 		break;
 	}
+	case PKK_ECDSA: {
+		printf("ECDSA");
+		break;
+	}
 
 	case PKK_XAUTH:
 		printf("XAUTH keyid: %s\n", idb);

@@ -100,6 +100,7 @@ static void ikev2_calculate_sighash(struct state *st,
 		break;
 	case IKEv2_AUTH_HASH_SHA2_384:
 		ctx = crypt_hash_init(&ike_alg_hash_sha2_384,"sighash", DBG_CRYPT);
+		libreswan_log("checking the sh2-384 case ");
 		break;
 	case IKEv2_AUTH_HASH_SHA2_512:
 		ctx = crypt_hash_init(&ike_alg_hash_sha2_512,"sighash", DBG_CRYPT);
@@ -240,18 +241,20 @@ static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 {
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
-	const struct RSA_public_key *k = &kr->u.rsa;
+//	const struct RSA_public_key *k = &kr->u.rsa;
+	const struct ECDSA_public_key *k = &kr->u.ecdsa;
 	(void) version;
 	(void) rsa_hash_algo;
-
+	libreswan_log("came inside try_RSA_signature_v2");
 	if (k == NULL)
 		return "1" "no key available"; /* failure: no key to use */
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
-	if (sig_len != k->k)
-		return "1" "SIG length does not match public key length";
-
-	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len,
+//	if (sig_len != k->k)
+//		return "1" "SIG length does not match public key length";
+//SAHANA ECDSA
+//	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len,
+	err_t ugh = ECDSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len,
 				             TRUE, rsa_hash_algo);
 	if (ugh != NULL)
 		return ugh;
