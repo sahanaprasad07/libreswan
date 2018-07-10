@@ -29,5 +29,6 @@ extern const struct oakley_group_desc oakley_group_dh22;
 #endif
 extern const struct oakley_group_desc oakley_group_dh23;
 extern const struct oakley_group_desc oakley_group_dh24;
-
+//#ifdef USE_DH31
 extern const struct oakley_group_desc oakley_group_dh31;
+//#endif

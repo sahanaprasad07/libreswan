@@ -362,7 +362,7 @@ void ipsecdoi_replace(struct state *st, unsigned long try)
 bool has_preloaded_public_key(struct state *st)
 {
 	struct connection *c = st->st_connection;
-
+	libreswan_log("came inside has_preloaded_public_key PUBKEY_ALG_RSA");
 	/* do not consider rw connections since
 	 * the peer's identity must be known
 	 */

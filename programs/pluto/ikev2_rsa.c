@@ -233,7 +233,7 @@ bool ikev2_calculate_rsa_hash(struct state *st,
 	return TRUE;
 }
 
-static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
+/*static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  size_t hash_len,
 				  const pb_stream *sig_pbs, struct pubkey *kr,
 				  struct state *st, bool version,
@@ -241,19 +241,44 @@ static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 {
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
-//	const struct RSA_public_key *k = &kr->u.rsa;
+	const struct RSA_public_key *k = &kr->u.rsa;
+	(void) version;
+	(void) rsa_hash_algo;
+	if (k == NULL)
+		return "1" "no key available";*/ /* failure: no key to use */
+
+	/* decrypt the signature -- reversing RSA_sign_hash */
+	/*if (sig_len != k->k)
+		return "1" "SIG length does not match public key length";
+	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len,
+				             TRUE, rsa_hash_algo);
+	if (ugh != NULL)
+		return ugh;
+
+	unreference_key(&st->st_peer_pubkey);
+	st->st_peer_pubkey = reference_key(kr);
+
+	return NULL;
+}*/
+
+static err_t try_ECDSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
+				  size_t hash_len,
+				  const pb_stream *sig_pbs, struct pubkey *kr,
+				  struct state *st, bool version,
+				  enum notify_payload_hash_algorithms rsa_hash_algo)
+{
+	const u_char *sig_val = sig_pbs->cur;
+	size_t sig_len = pbs_left(sig_pbs);
 	const struct ECDSA_public_key *k = &kr->u.ecdsa;
 	(void) version;
 	(void) rsa_hash_algo;
-	libreswan_log("came inside try_RSA_signature_v2");
+	libreswan_log("came inside try_ECDSA_signature_v2");
 	if (k == NULL)
 		return "1" "no key available"; /* failure: no key to use */
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
-//	if (sig_len != k->k)
-//		return "1" "SIG length does not match public key length";
-//SAHANA ECDSA
-//	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len,
+	if (sig_len != k->k)
+		return "1" "SIG length does not match public key length";
 	err_t ugh = ECDSA_signature_verify_nss(k, hash_val, hash_len, sig_val, sig_len,
 				             TRUE, rsa_hash_algo);
 	if (ugh != NULL)
@@ -264,7 +289,6 @@ static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 
 	return NULL;
 }
-
 stf_status ikev2_verify_rsa_hash(struct state *st,
 				enum original_role role,
 				unsigned char *idhash,
@@ -300,7 +324,8 @@ stf_status ikev2_verify_rsa_hash(struct state *st,
 				calc_hash, rsa_hash_algo);
 	retVal = RSA_check_signature_gen(st, calc_hash, hash_len,
 					sig_pbs, TRUE, rsa_hash_algo,
-					try_RSA_signature_v2);
+			//		try_RSA_signature_v2);
+					try_ECDSA_signature_v2);
 	pfree(calc_hash);
 	return retVal;
 

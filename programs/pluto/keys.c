@@ -462,7 +462,7 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	nss_pub.data = pub.ptr;
 	nss_pub.len = (unsigned int)pub.len;
 	nss_pub.type = siBuffer;
-
+	libreswan_log("came inside ECDSA_signature_verify_nss for decrypting signature from nss");
 
 	retVal = SECITEM_CopyItem(arena, &publicKey->u.ec.publicValue, &nss_pub);
 
@@ -478,12 +478,6 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	data.len = (unsigned int)sig_len;
 	data.data = alloc_bytes(data.len, "NSS decrypted signature");
 	data.type = siBuffer;
-
-	if (rsa_hash_algo == 0 /* ikev1*/ || 
-				rsa_hash_algo == IKEv2_AUTH_HASH_SHA1 /* old style rsa with SHA1*/) {
-
-		data.len = (unsigned int)sig_len;
-		data.data = alloc_bytes(data.len, "NSS decrypted signature");
 
 		if (PK11_VerifyRecover(publicKey, &signature, &data,
 				       lsw_return_nss_password_file_info()) ==
@@ -501,8 +495,6 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 			loglog(RC_LOG_SERIOUS, "ECDSA Signature NOT verified");
 			return "14" "NSS error: Not able to verify";
 		}
-
-	}
 
 	DBG(DBG_CRYPT,
 	    DBG_dump("NSS ECDSA verify: hash value: ", hash_val, hash_len));
@@ -556,11 +548,14 @@ static bool take_a_crack(struct tac_state *s,
 			 struct pubkey *kr,
 			 const char *story)
 {
+	libreswan_log("came inside take a crack");
 	err_t ugh =
 		(s->try_RSA_signature)(s->hash_val, s->hash_len, s->sig_pbs,
 				       kr, s->st, s->version, s->rsa_hash_algo);
-	const struct RSA_public_key *k = &kr->u.rsa;
-
+//	const struct RSA_public_key *k = &kr->u.rsa;
+//	//SAHANA ECDSA
+	const struct ECDSA_public_key *k = &kr->u.ecdsa;
+	libreswan_log("came inside take a crack_later");
 	s->tried_cnt++;
 	if (ugh == NULL) {
 		DBG(DBG_CRYPT | DBG_CONTROL,
@@ -569,7 +564,8 @@ static bool take_a_crack(struct tac_state *s,
 		return TRUE;
 	} else {
 		DBG(DBG_CRYPT,
-		    DBG_log("an RSA Sig check failure %s with *%s [%s]",
+		   // DBG_log("an RSA Sig check failure %s with *%s [%s]",
+		    DBG_log("an ECDSA Sig check failure %s with *%s [%s]",
 			    ugh + 1, k->keyid, story));
 		if (s->best_ugh == NULL || s->best_ugh[0] < ugh[0])
 			s->best_ugh = ugh;
@@ -639,10 +635,11 @@ stf_status RSA_check_signature_gen(struct state *st,
 			});
 
 			int pl;	/* value ignored */
-//SAHANA ECDSA
+//SAHANA ECDSA		
+			libreswan_log("pubkey value is %d",key->alg);
 		//	if (key->alg == PUBKEY_ALG_RSA &&
 			if (key->alg == PUBKEY_ALG_ECDSA &&
-			    same_id(&c->spd.that.id, &key->id) &&
+			 //   same_id(&c->spd.that.id, &key->id) &&
 			    trusted_ca_nss(key->issuer, c->spd.that.ca, &pl))
 			{
 				libreswan_log("came to verify ECDSA");
@@ -751,7 +748,8 @@ static struct secret *lsw_get_secret(const struct connection *c,
 	if (kind == (PKK_RSA || PKK_ECDSA) && c->spd.this.cert.ty == CERT_X509_SIGNATURE &&
 			c->spd.this.cert.u.nss_cert != NULL) {
 		/* Must free MY_PUBLIC_KEY */
-		struct pubkey *my_public_key = allocate_RSA_public_key_nss(
+//		struct pubkey *my_public_key = allocate_RSA_public_key_nss(
+		struct pubkey *my_public_key = allocate_ECDSA_public_key_nss(
 			c->spd.this.cert.u.nss_cert);
 
 		if (my_public_key == NULL) {
@@ -1007,6 +1005,7 @@ err_t add_public_key(const struct id *id,
 	switch (alg) {
 	case PUBKEY_ALG_RSA:
 	{
+		libreswan_log("came inside to unpack PUBKEY_ALG_RSA");
 		err_t ugh = unpack_RSA_public_key(&pk->u.rsa, key);
 
 		if (ugh != NULL) {

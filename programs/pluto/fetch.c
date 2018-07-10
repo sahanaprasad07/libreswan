@@ -500,7 +500,7 @@ void check_crls(void)
 	PORT_FreeArena(crl_list->arena, PR_FALSE);
 
 	/* add the pubkeys distribution points to fetch list */
-
+	libreswan_log("came inside fetch.c, pluto_pubkeys maybe?");
 	struct pubkey_list *pubkeys = pluto_pubkeys;
 	struct pubkey *key;
 

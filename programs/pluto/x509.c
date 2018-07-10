@@ -221,6 +221,7 @@ static void same_nss_gn_as_pluto_gn(CERTGeneralName *nss_gn,
  */
 bool trusted_ca_nss(chunk_t a, chunk_t b, int *pathlen)
 {
+	libreswan_log("came inside trusted_ca_nss call but?");
 	DBG(DBG_X509 | DBG_CONTROLMORE, {
 		if (a.ptr != NULL) {
 			char abuf[ASN1_BUF_LEN];
@@ -490,6 +491,7 @@ static void get_pluto_gn_from_nss_cert(CERTCertificate *cert, generalName_t **gn
 
 static void replace_public_key(struct pubkey *pk)
 {
+	libreswan_log("came inside replace_public_key, pluto_pubkeys maybe?");
 	/* ??? clang 3.5 thinks pk might be NULL */
 	delete_public_keys(&pluto_pubkeys, &pk->id, pk->alg);
 	install_public_key(pk, &pluto_pubkeys);
@@ -499,7 +501,8 @@ static void create_cert_pubkey(struct pubkey **pkp,
 				      const struct id *id,
 				      CERTCertificate *cert)
 {
-	struct pubkey *pk = allocate_RSA_public_key_nss(cert);
+//	struct pubkey *pk = allocate_RSA_public_key_nss(cert);
+	struct pubkey *pk = allocate_ECDSA_public_key_nss(cert);
 
 	passert(pk != NULL);
 	pk->id = *id;

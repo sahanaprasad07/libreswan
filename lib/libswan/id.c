@@ -350,31 +350,50 @@ bool any_id(const struct id *a)
 /* compare two struct id values */
 bool same_id(const struct id *a, const struct id *b)
 {
+	libreswan_log("came inside same_id from ECDSA ");
 	if (b->kind == ID_NONE || a->kind == ID_NONE) {
+
+	libreswan_log("came inside same_id failed here 1? ");
 		DBG(DBG_PARSING, DBG_log("id type with ID_NONE means wildcard match"));
 		return TRUE; /* it's the wildcard */
 	}
 
 	if (a->kind != b->kind) {
+
+	libreswan_log("came inside same_id failed here 2? ");
 		return FALSE;
 	}
 
+	libreswan_log("came inside same_id failed here 4? ");
 	switch (a->kind) {
+
 	case ID_NONE:
+
+	libreswan_log("came inside same_id failed here 5? ");
 		return TRUE; /* repeat of above for completeness */
 
 	case ID_NULL:
+
+	libreswan_log("came inside same_id failed here 6? ");
 		if (a->kind == b->kind) {
 			DBG(DBG_PARSING, DBG_log("ID_NULL: id kind matches"));
 			return TRUE;
 		}
+
+	libreswan_log("came inside same_id failed here 3? ");
 		return FALSE;
 
 	case ID_IPV4_ADDR:
+
+	libreswan_log("came inside same_id failed here 7? ");
 	case ID_IPV6_ADDR:
+
+	libreswan_log("came inside same_id failed here 8? ");
 		return sameaddr(&a->ip_addr, &b->ip_addr);
 
 	case ID_FQDN:
+
+	libreswan_log("came inside same_id failed here 9? ");
 	case ID_USER_FQDN:
 		/*
 		 * assumptions:
@@ -383,6 +402,7 @@ bool same_id(const struct id *a, const struct id *b)
 		 *   (even if the only character?)
 		 */
 	{
+	libreswan_log("came inside same_id failed here 10? ");
 		size_t al = a->name.len,
 			bl = b->name.len;
 
@@ -400,17 +420,23 @@ bool same_id(const struct id *a, const struct id *b)
 			DBG_log("same_id() received ID_FROMCERT - unexpected"));
 		/* FALLTHROUGH */
 	case ID_DER_ASN1_DN:
+
+	libreswan_log("came inside same_id failed here 11? ");
 		return same_dn(a->name, b->name);
 
 	case ID_KEY_ID:
+		
+	libreswan_log("came inside same_id failed here 12? ");
 		return a->name.len == b->name.len &&
 			memeq(a->name.ptr, b->name.ptr, a->name.len);
 
 	default:
+		libreswan_log("came inside default case maybe in same_id?");
 		bad_case(a->kind);
 		/* NOTREACHED */
 		return FALSE;
 	}
+	libreswan_log("came inside same_id failed here 13? ");
 }
 
 /* compare two struct id values, DNs can contain wildcards */

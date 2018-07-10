@@ -166,15 +166,19 @@ static void key_add_request(const struct whack_message *msg)
 	DBG_log("add keyid %s", msg->keyid);
 	struct id keyid;
 	err_t ugh = atoid(msg->keyid, &keyid, FALSE);
-
+	
+		libreswan_log("came inside key_add_request, maybe pluto_pubkeys gets updated here 3");
 	if (ugh != NULL) {
 		loglog(RC_BADID, "bad --keyid \"%s\": %s", msg->keyid, ugh);
 	} else {
+		libreswan_log("came inside key_add_request, maybe pluto_pubkeys gets updated here 1");
 		if (!msg->whack_addkey)
 			delete_public_keys(&pluto_pubkeys, &keyid,
 					   msg->pubkey_alg);
 
 		if (msg->keyval.len != 0) {
+			
+		libreswan_log("came inside key_add_request, maybe pluto_pubkeys gets updated here 2");
 			DBG_dump_chunk("add pubkey", msg->keyval);
 			ugh = add_public_key(&keyid, PUBKEY_LOCAL,
 					     msg->pubkey_alg,

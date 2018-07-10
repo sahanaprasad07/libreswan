@@ -1154,6 +1154,7 @@ int main(int argc, char **argv)
 					 ugh);
 				diagq(ugh_space, optarg);
 			}
+			libreswan_log("came inside whack to check if PUBKEY_ALG_RSA is set here");
 			msg.pubkey_alg = PUBKEY_ALG_RSA;
 			msg.keyval.ptr = (unsigned char *)keyspace;
 		}

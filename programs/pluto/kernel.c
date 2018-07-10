@@ -572,7 +572,7 @@ int fmt_common_shell_out(char *buf, int blen, const struct connection *c,
 		for (p = pluto_pubkeys; p != NULL; p = p->next) {
 			struct pubkey *key = p->key;
 			int pathlen;	/* value ignored */
-
+			libreswan_log("came inside kernel stuff and checked for PUBKEY_ALG_RSA");
 			if (key->alg == PUBKEY_ALG_RSA &&
 			    same_id(&sr->that.id, &key->id) &&
 			    trusted_ca_nss(key->issuer, sr->that.ca, &pathlen))

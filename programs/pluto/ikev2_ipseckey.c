@@ -380,6 +380,7 @@ static err_t parse_rr(struct p_dns_req *dnsr, ldns_pkt *ldnspkt)
 
 		if (dnsr->qtype == atype && atype == LDNS_RR_TYPE_IPSECKEY) {
 			/* the real work done here -- add key to pluto store */
+			libreswan_log("came inside ikev2_ipseckey.c add_rsa_pubkey_to_pluto");
 			err = add_rsa_pubkey_to_pluto(dnsr, rdf,
 					ldns_rr_ttl(ans));
 		}
