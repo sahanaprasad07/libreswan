@@ -1532,15 +1532,6 @@ void add_connection(const struct whack_message *wm)
 					prettypolicy(c->policy & POLICY_ID_AUTH_MASK)));
 			}
 		}
-<<<<<<< HEAD
-#endif
-		DBG(DBG_CONTROL,
-			DBG_log("Added new connection_sahana %s with policy %s%s",
-				c->name,
-				prettypolicy(c->policy),
-				NEVER_NEGOTIATE(c->policy) ? "+NEVER_NEGOTIATE" : ""));
-=======
->>>>>>> origin/master
 
 		/* fixup symmetric policy flags based on asymmetric ones */
 		if ((wm->left.authby == AUTH_NULL && wm->right.authby == AUTH_RSASIG) ||
@@ -1756,23 +1747,8 @@ void add_connection(const struct whack_message *wm)
 		c->vti_iface = wm->vti_iface;
 		c->vti_routing = wm->vti_routing;
 		c->vti_shared = wm->vti_shared;
-<<<<<<< HEAD
 
-		} else { /* not !NEVER_NEGOTIATE() */
-			/* set default to AUTH_NEVER if unset and we do not expect to do IKE */
-			if (wm->left.authby == AUTH_UNSET && wm->right.authby == AUTH_UNSET) {
-				if ((c->policy & POLICY_ID_AUTH_MASK) == LEMPTY) {
-						/* authby= was also not specified - fill in default */
-						c->policy |= POLICY_AUTH_NEVER;
-						libreswan_log("Policy auth never was set??");
-						DBG(DBG_CONTROL, DBG_log("No AUTH policy was set for type=passthrough - defaulting to %s",
-							prettypolicy(c->policy & POLICY_ID_AUTH_MASK)));
-				}
-			}
-		}
-=======
 	}
->>>>>>> origin/master
 
 #ifdef HAVE_NM
 	c->nmconfigured = wm->nmconfigured;
@@ -1866,7 +1842,6 @@ void add_connection(const struct whack_message *wm)
 		c->spd.that = t;
 	}
 
-<<<<<<< HEAD
 		/*
 		 * If both left/rightauth is unset, fill it in with (prefered) symmetric policy
 		 */
@@ -1900,7 +1875,6 @@ void add_connection(const struct whack_message *wm)
 				break;
 			}
 		}
-=======
 	c->spd.spd_next = NULL;
 
 	/* set internal fields */
@@ -1917,7 +1891,6 @@ void add_connection(const struct whack_message *wm)
 	 * need one. Does CK_TEMPLATE need one?
 	 */
 	c->spd.reqid = c->sa_reqid == 0 ? gen_reqid() : c->sa_reqid;
->>>>>>> origin/master
 
 	/* force all oppo connections to have a client */
 	if (c->policy & POLICY_OPPORTUNISTIC) {
@@ -3028,7 +3001,7 @@ struct connection *find_next_host_connection(
 static chunk_t get_peer_ca(const struct id *peer_id)
 {
 	struct pubkey_list *p;
-
+	libreswan_log("came inside get_peer_ca, check PUBKEY_ALG_RSA");
 	for (p = pluto_pubkeys; p != NULL; p = p->next) {
 		struct pubkey *key = p->key;
 
@@ -3205,6 +3178,7 @@ struct connection *refine_host_connection(const struct state *st,
 			 * key: we used it in our previous message.
 			 * Paul: only true for IKEv1
 			 */
+			libreswan_log("came inside refine host connection - AUTH_RSASIG");
 			my_RSA_pri = get_RSA_private_key(c);
 			if (my_RSA_pri == NULL) {
 				loglog(RC_LOG_SERIOUS, "cannot find RSA key");

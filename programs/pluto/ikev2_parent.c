@@ -548,7 +548,8 @@ static bool v2_check_auth(enum ikev2_auth_method recv_auth,
 	//unsigned char check_length_rsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
 	unsigned char check_ecdsa_sha256_blob[ASN1_SHA2_256_ECDSA_OID_SIZE] = {0x0};
 	unsigned char check_length_ecdsa_sha2_blob[ASN1_LEN_ALGO_IDENTIFIER]= {0};
-	switch (atype) {
+
+	switch (recv_auth) {
 	case IKEv2_AUTH_RSA:
 	{
 		if (that_authby != AUTH_RSASIG) {
