@@ -264,6 +264,7 @@ static err_t try_ECDSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  struct state *st, bool version UNUSED,
 				  enum notify_payload_hash_algorithms hash_algo UNUSED)
 {
+	libreswan_log("try_ECDSA_signature_v2");
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct ECDSA_public_key *k = &kr->u.ecdsa;

@@ -426,6 +426,7 @@ static int starter_whack_add_pubkey(struct starter_config *cfg,
 				const struct starter_conn *conn,
 				const struct starter_end *end, const char *lr)
 {
+	libreswan_log("starter_whack_add_pubkey");
 	const char *err;
 	char err_buf[TTODATAV_BUF];
 	char keyspace[1024 + 4];

@@ -123,6 +123,20 @@ bool cert_key_is_rsa(CERTCertificate *cert)
 	return ret;
 }
 
+bool cert_key_is_ecdsa(CERTCertificate *cert)
+{
+	bool ret = FALSE;
+	SECKEYPublicKey *pk = SECKEY_ExtractPublicKey(
+					&cert->subjectPublicKeyInfo);
+
+	if (pk != NULL) {
+		ret = SECKEY_GetPublicKeyType(pk) == ecKey;
+		SECKEY_DestroyPublicKey(pk);
+	}
+
+	return ret;
+}
+
 static realtime_t get_nss_cert_notafter(CERTCertificate *cert)
 {
 	PRTime notBefore, notAfter;
@@ -489,6 +503,7 @@ static void get_pluto_gn_from_nss_cert(CERTCertificate *cert, generalName_t **gn
 
 static void replace_public_key(struct pubkey *pk)
 {
+	libreswan_log("replace_public_key");
 	/* ??? clang 3.5 thinks pk might be NULL */
 	delete_public_keys(&pluto_pubkeys, &pk->id, pk->alg);
 	install_public_key(pk, &pluto_pubkeys);
@@ -507,6 +522,20 @@ static void create_cert_pubkey(struct pubkey **pkp,
 	*pkp = pk;
 }
 
+static void create_cert_pubkey_ecdsa(struct pubkey **pkp,
+				      const struct id *id,
+				      CERTCertificate *cert)
+{
+	libreswan_log("create_cert_pubkey_ecdsa");
+	struct pubkey *pk = allocate_ECDSA_public_key_nss(cert);
+
+	passert(pk != NULL);
+	pk->id = *id;
+	pk->until_time = get_nss_cert_notafter(cert);
+	pk->issuer = same_secitem_as_chunk(cert->derIssuer);
+	*pkp = pk;
+}
+
 static void create_cert_subjectdn_pubkey(struct pubkey **pkp,
 				       CERTCertificate *cert)
 {
@@ -515,6 +544,17 @@ static void create_cert_subjectdn_pubkey(struct pubkey **pkp,
 	id.kind = ID_DER_ASN1_DN;
 	id.name = same_secitem_as_chunk(cert->derSubject);
 	create_cert_pubkey(pkp, &id, cert);
+}
+
+static void create_cert_subjectdn_pubkey_ecdsa(struct pubkey **pkp,
+				       CERTCertificate *cert)
+{
+	libreswan_log("create_cert_subjectdn_pubkey_ecdsa");
+	struct id id;
+
+	id.kind = ID_DER_ASN1_DN;
+	id.name = same_secitem_as_chunk(cert->derSubject);
+	create_cert_pubkey_ecdsa(pkp, &id, cert);
 }
 
 static void add_cert_san_pubkeys(CERTCertificate *cert)
@@ -558,6 +598,32 @@ void add_rsa_pubkey_from_cert(const struct id *keyid, CERTCertificate *cert)
 	}
 
 	create_cert_subjectdn_pubkey(&pk, cert);
+	replace_public_key(pk);
+
+	add_cert_san_pubkeys(cert);
+
+	if (keyid != NULL && keyid->kind != ID_DER_ASN1_DN &&
+			     keyid->kind != ID_NONE &&
+			     keyid->kind != ID_FROMCERT)
+	{
+		struct pubkey *pk2 = NULL;
+
+		create_cert_pubkey(&pk2, keyid, cert);
+		replace_public_key(pk2);
+	}
+}
+
+void add_ecdsa_pubkey_from_cert(const struct id *keyid, CERTCertificate *cert)
+{
+	libreswan_log("add_ecdsa_pubkey_from_cert");
+	struct pubkey *pk = NULL;
+
+	if (!cert_key_is_ecdsa(cert)) {
+		libreswan_log("cert key is not ecdsa type!");
+		return;
+	}
+
+	create_cert_subjectdn_pubkey_ecdsa(&pk, cert);
 	replace_public_key(pk);
 
 	add_cert_san_pubkeys(cert);
@@ -709,6 +775,7 @@ static lsw_cert_ret pluto_process_certs(struct state *st,
 	} else if ((ret & VERIFY_RET_OK) && end_cert != NULL) {
 		libreswan_log("certificate verified OK: %s", end_cert->subjectName);
 		add_rsa_pubkey_from_cert(&c->spd.that.id, end_cert);
+		add_ecdsa_pubkey_from_cert(&c->spd.that.id, end_cert);
 
 		/* if we already verified ID, no need to do it again */
 		if (st->st_peer_alt_id) {

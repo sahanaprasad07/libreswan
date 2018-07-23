@@ -348,14 +348,14 @@ bool any_id(const struct id *a)
 }
 
 /* compare two struct id values */
-bool same_id(const struct id *a, const struct id *b)
+bool same_id(const struct id *a, const struct id *b) /* ASKK */
 {
 	if (b->kind == ID_NONE || a->kind == ID_NONE) {
 		DBG(DBG_PARSING, DBG_log("id type with ID_NONE means wildcard match"));
 		return TRUE; /* it's the wildcard */
 	}
 
-	if (a->kind != b->kind) {
+	if (a->kind != b->kind) { /* ASKK */
 		return FALSE;
 	}
 
@@ -400,7 +400,7 @@ bool same_id(const struct id *a, const struct id *b)
 			DBG_log("same_id() received ID_FROMCERT - unexpected"));
 		/* FALLTHROUGH */
 	case ID_DER_ASN1_DN:
-		return same_dn(a->name, b->name);
+		return same_dn(a->name, b->name); /* ASKK */
 
 	case ID_KEY_ID:
 		return a->name.len == b->name.len &&

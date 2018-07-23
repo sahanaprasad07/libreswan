@@ -122,6 +122,15 @@ void DBG_log_RSA_public_key(const struct RSA_public_key *k)
 	DBG_log_ckaid("CKAID", k->ckaid);
 }
 
+
+void DBG_log_ECDSA_public_key(const struct ECDSA_public_key *k)
+{
+	DBG_log(" keyid: *%s", k->keyid);
+	DBG_log(" key size: *%s", k->keyid);
+	DBG_dump_chunk("pub", k->pub);
+	DBG_log_ckaid("CKAID", k->ckaid);
+}
+
 static err_t RSA_public_key_sanity(struct RSA_private_key *k)
 {
 	/* note that the *last* error found is reported */
@@ -302,6 +311,7 @@ void free_ECDSA_public_content(struct ECDSA_public_key *ecdsa)
  */
 void free_public_key(struct pubkey *pk)
 {
+	libreswan_log("free_public_key_out");
 	free_id_content(&pk->id);
 	freeanychunk(pk->issuer);
 
@@ -311,6 +321,7 @@ void free_public_key(struct pubkey *pk)
 		free_RSA_public_content(&pk->u.rsa);
 		break;
 	case PUBKEY_ALG_ECDSA:
+		libreswan_log("free_public_key");
 		free_ECDSA_public_content(&pk->u.ecdsa);
 		break;
 	default:
@@ -346,6 +357,7 @@ static int lsw_check_secret_byid(struct secret *secret UNUSED,
 				struct private_key_stuff *pks,
 				void *uservoid)
 {
+	libreswan_log("lsw_check_secret_byid");
 	struct secret_byid *sb = (struct secret_byid *)uservoid;
 
 	DBG(DBG_CONTROL,
@@ -540,6 +552,10 @@ struct secret *lsw_find_secret_by_id(struct secret *secrets,
 						       memeq(s->pks.ppk.ptr,
 							     best->pks.ppk.ptr,
 							     s->pks.ppk.len);
+						break;
+					case PKK_ECDSA:
+						/* ASKK */
+						libreswan_log("lsw_find_secret_by_id");
 						break;
 					default:
 						bad_case(kind);
@@ -1273,6 +1289,7 @@ void unreference_key(struct pubkey **pkp)
  */
 struct pubkey_list *free_public_keyentry(struct pubkey_list *p)
 {
+	libreswan_log("free_public_keyentry");
 	struct pubkey_list *nxt = p->next;
 
 	if (p->key != NULL)
@@ -1283,6 +1300,7 @@ struct pubkey_list *free_public_keyentry(struct pubkey_list *p)
 
 void free_public_keys(struct pubkey_list **keys)
 {
+	libreswan_log("free_public_keys");
 	while (*keys != NULL)
 		*keys = free_public_keyentry(*keys);
 }
@@ -1441,6 +1459,7 @@ struct pubkey *allocate_ECDSA_public_key_nss(CERTCertificate *cert)
 	/* free: ckaid */
 
 	chunk_t pub;
+	int k;
 	{
 		SECKEYPublicKey *nsspk = SECKEY_ExtractPublicKey(&cert->subjectPublicKeyInfo);
 		if (nsspk == NULL) {
@@ -1448,13 +1467,15 @@ struct pubkey *allocate_ECDSA_public_key_nss(CERTCertificate *cert)
 			return NULL;
 		}
 		pub = clone_secitem_as_chunk(nsspk->u.ec.publicValue, "pub");
+		k = nsspk->u.ec.size;
 		SECKEY_DestroyPublicKey(nsspk);
 	}
-	/* free: ckaid, n, e */
+	/* free: ckaid, pub */
 
 	struct pubkey *pk = alloc_thing(struct pubkey, "pubkey");
 	pk->u.ecdsa.pub = pub;
 	pk->u.ecdsa.ckaid = ckaid;
+	pk->u.ecdsa.k = k;
 	/*
 	 * based on comments in form_keyid, the modulus length
 	 * returned by NSS might contain a leading zero and this
@@ -1595,10 +1616,12 @@ static err_t add_ckaid_to_ecdsa_privkey(struct ECDSA_private_key *ecdsak,
 		/* let caller clean up mess */
 		goto out;
 	}
+	/* keyid */
+	memset(ecdsak->pub.keyid,0,KEYID_BUF);
+        memcpy(ecdsak->pub.keyid, pubk->u.ec.publicValue.data, KEYID_BUF-1); 
 
-//	form_keyid_from_nss(pubk->u.rsa.publicExponent, pubk->u.rsa.modulus,
-//			rsak->pub.keyid, &rsak->pub.k);
-
+	/*size */
+	ecdsak->pub.k = pubk->u.ec.size;
 out:
 	if (certCKAID != NULL) {
 		SECITEM_FreeItem(certCKAID, PR_TRUE);

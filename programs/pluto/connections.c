@@ -861,6 +861,7 @@ static void load_end_nss_certificate(const char *which, CERTCertificate *cert,
 	DBG(DBG_X509, DBG_log("loaded %s certificate \'%s\'", which, name));
 
 	add_rsa_pubkey_from_cert(&d_end->id, cert);
+	add_ecdsa_pubkey_from_cert(&d_end->id, cert);
 	d_end->cert.ty = CERT_X509_SIGNATURE;
 	d_end->cert.u.nss_cert = cert;
 

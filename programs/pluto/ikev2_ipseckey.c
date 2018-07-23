@@ -241,7 +241,8 @@ static err_t add_rsa_pubkey_to_pluto(struct p_dns_req *dnsr, ldns_rdf *rdf,
 				enum_name(&dns_auth_level_names, al)));
 	}
 
-	ugh = add_ipseckey(&keyid, al, PUBKEY_ALG_RSA, ttl, ttl_used,
+	//ugh = add_ipseckey(&keyid, al, PUBKEY_ALG_RSA, ttl, ttl_used,
+	ugh = add_ipseckey(&keyid, al, PUBKEY_ALG_ECDSA, ttl, ttl_used,
 			&keyval, &pluto_pubkeys);
 	if (ugh != NULL)
 		loglog(RC_LOG_SERIOUS, "Add  publickey failed %s, %s, %s", ugh,

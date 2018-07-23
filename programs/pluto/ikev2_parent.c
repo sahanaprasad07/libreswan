@@ -726,7 +726,7 @@ static bool v2_check_auth(enum ikev2_auth_method recv_auth,
 		enum notify_payload_hash_algorithms hash_algo;
 		bool hash_check = FALSE;
 
-		if (that_authby != AUTH_RSASIG || that_authby != AUTH_ECDSA) {
+		if (that_authby != AUTH_ECDSA) {
 			libreswan_log("Peer attempted Authentication through Digital Signature but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;

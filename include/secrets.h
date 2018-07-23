@@ -83,10 +83,8 @@ struct RSA_private_key {
 
 struct ECDSA_public_key {
 	char keyid[KEYID_BUF];
-	int size;
-	unsigned k;
+	unsigned int k;
 	chunk_t pub;
-	chunk_t enc;
 	ckaid_t ckaid;
 
 };
@@ -106,8 +104,10 @@ err_t base64_to_rsa_pubkey(const char *rr, chunk_t *exponent, chunk_t *modulus);
 
 err_t pack_RSA_public_key(const struct RSA_public_key *rsa, chunk_t *pubkey);
 err_t unpack_RSA_public_key(struct RSA_public_key *rsa, const chunk_t *pubkey);
+err_t unpack_ECDSA_public_key(struct ECDSA_public_key *ecdsa, const chunk_t *pubkey); /* ASKK */
 
 void DBG_log_RSA_public_key(const struct RSA_public_key *rsa);
+void DBG_log_ECDSA_public_key(const struct ECDSA_public_key *ecdsa);
 
 struct private_key_stuff {
 	enum PrivateKeyKind kind;

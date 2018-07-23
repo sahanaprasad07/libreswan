@@ -110,6 +110,9 @@ static int print_secrets(struct secret *secret,
 	case PKK_XAUTH:
 		kind = "XAUTH";
 		break;
+	case PKK_ECDSA:
+		kind = "ECDSA";
+		break;
 	default:
 		return 1;
 	}
@@ -417,6 +420,7 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 			       bool version UNUSED,
 			       enum notify_payload_hash_algorithms hash_algo UNUSED)
 {
+	libreswan_log("ECDSA_signature_verify_nss");
 	SECKEYPublicKey *publicKey;
 	PRArenaPool *arena;
 	SECStatus retVal;
@@ -541,20 +545,22 @@ static bool take_a_crack(struct tac_state *s,
 			 struct pubkey *kr,
 			 const char *story)
 {
+	libreswan_log("take_a_crack");
 	err_t ugh =
 		(s->try_RSA_signature)(s->hash_val, s->hash_len, s->sig_pbs,
 				       kr, s->st, s->version, s->hash_algo);
-	const struct RSA_public_key *k = &kr->u.rsa;
+	//const struct RSA_public_key *k = &kr->u.rsa;
+	const struct ECDSA_public_key *k = &kr->u.ecdsa;
 
 	s->tried_cnt++;
 	if (ugh == NULL) {
 		DBG(DBG_CRYPT | DBG_CONTROL,
-		    DBG_log("an RSA Sig check passed with *%s [%s]",
+		    DBG_log("an ECDSA Sig check passed with *%s [%s]",
 			    k->keyid, story));
 		return TRUE;
 	} else {
 		DBG(DBG_CRYPT,
-		    DBG_log("an RSA Sig check failure %s with *%s [%s]",
+		    DBG_log("an ECDSA Sig check failure %s with *%s [%s]",
 			    ugh + 1, k->keyid, story));
 		if (s->best_ugh == NULL || s->best_ugh[0] < ugh[0])
 			s->best_ugh = ugh;
@@ -599,7 +605,7 @@ stf_status RSA_check_signature_gen(struct state *st,
 	s.tried_cnt = 0;
 	s.tn = s.tried;
 
-	/* try all appropriate Public keys */
+	/* try all appropriate Public keys */   /* ASKK */
 	{
 		realtime_t nw = realnow();
 
@@ -625,8 +631,8 @@ stf_status RSA_check_signature_gen(struct state *st,
 
 			int pl;	/* value ignored */
 
-			if (key->alg == PUBKEY_ALG_RSA &&
-			    same_id(&c->spd.that.id, &key->id) &&
+			if (key->alg == PUBKEY_ALG_ECDSA &&
+		//	    same_id(&c->spd.that.id, &key->id) &&
 			    trusted_ca_nss(key->issuer, c->spd.that.ca, &pl))
 			{
 				DBG(DBG_CONTROL, {
@@ -641,13 +647,13 @@ stf_status RSA_check_signature_gen(struct state *st,
 				    realbefore(key->until_time, nw))
 				{
 					loglog(RC_LOG_SERIOUS,
-					       "cached RSA public key has expired and has been deleted");
+					       "cached ECDSA public key has expired and has been deleted");
 					*pp = free_public_keyentry(p);
 					continue; /* continue with next public key */
 				}
 
 				if (take_a_crack(&s, key, "preloaded key")) {
-					loglog(RC_LOG_SERIOUS, "Authenticated using RSA");
+					loglog(RC_LOG_SERIOUS, "Authenticated using ECDSA");
 					return STF_OK;
 				}
 			}
@@ -670,7 +676,7 @@ stf_status RSA_check_signature_gen(struct state *st,
 
 		if (s.best_ugh == NULL) {
 				loglog(RC_LOG_SERIOUS,
-				       "no RSA public key known for '%s'",
+				       "no ECDSA public key known for '%s'",
 				       id_buf);
 
 			/* ??? is this the best code there is? */
@@ -731,10 +737,10 @@ static struct secret *lsw_get_secret(const struct connection *c,
 		    enum_name(&pkk_names, kind)));
 
 	/* is there a certificate assigned to this connection? */
-	if (kind == PKK_RSA && c->spd.this.cert.ty == CERT_X509_SIGNATURE &&
+	if (kind == PKK_ECDSA && c->spd.this.cert.ty == CERT_X509_SIGNATURE &&
 			c->spd.this.cert.u.nss_cert != NULL) {
 		/* Must free MY_PUBLIC_KEY */
-		struct pubkey *my_public_key = allocate_RSA_public_key_nss(
+		struct pubkey *my_public_key = allocate_ECDSA_public_key_nss(
 			c->spd.this.cert.u.nss_cert);
 
 		if (my_public_key == NULL) {
@@ -970,12 +976,13 @@ void free_remembered_public_keys(void)
 	free_public_keys(&pluto_pubkeys);
 }
 
-err_t add_public_key(const struct id *id,
+err_t add_public_key(const struct id *id, /* ASKK */
 		     enum dns_auth_level dns_auth_level,
 		     enum pubkey_alg alg,
 		     const chunk_t *key,
 		     struct pubkey_list **head)
 {
+	libreswan_log("add_public_key");
 	struct pubkey *pk = alloc_thing(struct pubkey, "pubkey");
 
 	/* first: algorithm-specific decoding of key chunk */
@@ -983,6 +990,16 @@ err_t add_public_key(const struct id *id,
 	case PUBKEY_ALG_RSA:
 	{
 		err_t ugh = unpack_RSA_public_key(&pk->u.rsa, key);
+
+		if (ugh != NULL) {
+			pfree(pk);
+			return ugh;
+		}
+	}
+	break;
+	case PUBKEY_ALG_ECDSA:
+	{
+		err_t ugh = unpack_ECDSA_public_key(&pk->u.ecdsa, key);
 
 		if (ugh != NULL) {
 			pfree(pk);
@@ -1011,6 +1028,7 @@ err_t add_ipseckey(const struct id *id,
 		     const chunk_t *key,
 		     struct pubkey_list **head)
 {
+	libreswan_log("add_ipseckey");
 	struct pubkey *pk = alloc_thing(struct pubkey, "ipseckey publickey");
 
 	/* first: algorithm-specific decoding of key chunk */
@@ -1025,6 +1043,16 @@ err_t add_ipseckey(const struct id *id,
 		}
 	}
 	break;
+	case PUBKEY_ALG_ECDSA:
+	{
+		err_t ugh = unpack_ECDSA_public_key(&pk->u.ecdsa, key);
+
+		if (ugh != NULL) {
+			pfree(pk);
+			return ugh;
+		}
+	}
+	break;	
 	default:
 		bad_case(alg);
 	}
@@ -1050,14 +1078,14 @@ void list_public_keys(bool utc, bool check_pub_keys)
 
 	if (!check_pub_keys) {
 		whack_log(RC_COMMENT, " ");
-		whack_log(RC_COMMENT, "List of RSA Public Keys:");
+		whack_log(RC_COMMENT, "List of ECDSA Public Keys:");
 		whack_log(RC_COMMENT, " ");
 	}
 
 	while (p != NULL) {
 		struct pubkey *key = p->key;
 
-		if (key->alg == PUBKEY_ALG_RSA) {
+		if (key->alg == PUBKEY_ALG_ECDSA) {
 			const char *check_expiry_msg = check_expiry(key->until_time,
 							PUBKEY_WARNING_INTERVAL,
 							TRUE);
@@ -1070,9 +1098,9 @@ void list_public_keys(bool utc, bool check_pub_keys)
 
 				LSWLOG_WHACK(RC_COMMENT, buf) {
 					lswlog_realtime(buf, key->installed_time, utc);
-					lswlogf(buf, ", %4d RSA Key %s (%s private key), until ",
-						8 * key->u.rsa.k,
-						key->u.rsa.keyid,
+					lswlogf(buf, ", %4d ECDSA Key %s (%s private key), until ",
+						8 * key->u.ecdsa.k,
+						key->u.ecdsa.keyid,
 						(has_private_rawkey(key) ? "has" : "no"));
 					lswlog_realtime(buf, key->until_time, utc);
 					lswlogf(buf, " %s", check_expiry_msg);

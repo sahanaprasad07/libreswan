@@ -207,3 +207,27 @@ err_t unpack_RSA_public_key(struct RSA_public_key *rsa, const chunk_t *pubkey)
 	/* generate the CKAID */
 	return NULL;
 }
+
+err_t unpack_ECDSA_public_key(struct ECDSA_public_key *ecdsa, const chunk_t *pubkey)
+{
+	libreswan_log("unpack_ECDSA_public_key");
+	err_t err;
+	ecdsa->pub = clone_chunk(*pubkey, "public value");
+
+	ckaid_t ckaid;
+	err = form_ckaid_ecdsa(ecdsa->pub, &ckaid);
+	if (err) {
+		freeanychunk(ecdsa->pub);
+		return err;
+	}
+
+	memset(ecdsa->keyid,0,KEYID_BUF);                                  
+        memcpy(ecdsa->keyid, pubkey->ptr, KEYID_BUF-1);
+
+	ecdsa->k = pubkey->len;
+	ecdsa->ckaid = ckaid;
+
+	DBG(DBG_PRIVATE, DBG_log_ECDSA_public_key(ecdsa));
+	/* generate the CKAID */
+	return NULL;
+}

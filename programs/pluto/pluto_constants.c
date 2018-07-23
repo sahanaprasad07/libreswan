@@ -373,6 +373,7 @@ enum_names stfstatus_name = {
 const char *const sa_policy_bit_names[] = {
 	"PSK",
 	"RSASIG",
+	"ECDSA",
 	"AUTH_NEVER",
 	"AUTHNULL",
 	"ENCRYPT",
@@ -425,6 +426,7 @@ static const char *const ikev2_asym_auth_names[] = {
 	"never",
 	"secret",
 	"rsasig",
+	"ecdsa",
 	"null",
 };
 
