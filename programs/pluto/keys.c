@@ -54,7 +54,6 @@
 #include "log.h"
 #include "whack.h"      /* for RC_LOG_SERIOUS */
 #include "timer.h"
-#include "ike_alg_sha2.h"
 
 #include "fetch.h"
 #include "pluto_x509.h"
@@ -76,6 +75,7 @@
 #include "lswconf.h"
 #include "lswnss.h"
 #include "secrets.h"
+#include "ike_alg_hash.h"
 
 static struct secret *pluto_secrets = NULL;
 

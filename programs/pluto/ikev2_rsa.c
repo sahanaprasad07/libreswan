@@ -56,8 +56,6 @@
 #include "vendor.h"
 #include "keys.h"
 #include "secrets.h"
-#include "ike_alg_sha1.h"
-#include "ike_alg_sha2.h"
 #include "crypt_hash.h"
 #include "ietf_constants.h"
 
