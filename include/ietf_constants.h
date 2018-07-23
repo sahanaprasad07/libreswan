@@ -1540,6 +1540,7 @@ enum ppk_id_type {
 enum pubkey_alg {
 	PUBKEY_ALG_DSA = 1,
 	PUBKEY_ALG_RSA = 2,
+	PUBKEY_ALG_ECDSA = 3,
 };
 
 /*
@@ -1777,6 +1778,14 @@ enum notify_payload_hash_algorithms {
 
 #define LEN_RSA_PSS_SHA2_BLOB {ASN1_SHA2_RSA_PSS_SIZE}
 #define RSA_SHA1_SIGNED_OCTETS 16
+
+/* ECDSA */
+#define ASN1_SHA2_ECDSA_SIZE 12
+
+#define ECDSA_SHA384_BLOB \
+	{0x30, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x03}
+
+#define LEN_ECDSA_SHA2_BLOB {ASN1_SHA2_ECDSA_SIZE}
 
 /* Limits on size of RSA moduli.
  * The upper bound matches that of DNSSEC (see RFC 2537).

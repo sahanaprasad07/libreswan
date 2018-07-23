@@ -81,6 +81,18 @@ struct RSA_private_key {
 	struct RSA_public_key pub;
 };
 
+struct ECDSA_public_key {
+    int size;
+    chunk_t pub;
+    chunk_t enc;
+    ckaid_t ckaid;
+
+};
+
+struct ECDSA_private_key {
+    struct ECDSA_public_key pub;
+};
+
 extern void free_RSA_public_content(struct RSA_public_key *rsa);
 
 err_t rsa_pubkey_to_rfc_resource_record(chunk_t exponent, chunk_t modulus, chunk_t *rr);
@@ -148,6 +160,7 @@ struct pubkey {
 	enum pubkey_alg alg;
 	union {
 		struct RSA_public_key rsa;
+		struct ECDSA_public_key ecdsa;
 	} u;
 };
 

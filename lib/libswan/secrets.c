@@ -108,6 +108,7 @@ static const struct fld RSA_private_field[] = {
 
 static err_t lsw_process_psk_secret(chunk_t *psk);
 static err_t lsw_process_rsa_secret(struct RSA_private_key *rsak);
+static err_t lsw_process_ecdsa_secret(struct ECDSA_private_key *ecdsa); /* ASK_ only for raw? */
 static err_t lsw_process_ppk_static_secret(chunk_t *ppk, chunk_t *ppk_id);
 static void lsw_process_secret_records(struct secret **psecrets);
 static void lsw_process_secrets_file(struct secret **psecrets,
@@ -1360,6 +1361,60 @@ void delete_public_keys(struct pubkey_list **head,
  * Relocated from x509.c for convenience
  */
 struct pubkey *allocate_RSA_public_key_nss(CERTCertificate *cert)
+{
+	ckaid_t ckaid;
+	{
+		SECItem *nss_ckaid = PK11_GetLowLevelKeyIDForCert(NULL, cert,
+								  lsw_return_nss_password_file_info());
+		if (nss_ckaid == NULL) {
+			return NULL;
+		}
+		err_t err = form_ckaid_nss(nss_ckaid, &ckaid);
+		SECITEM_FreeItem(nss_ckaid, PR_TRUE);
+		if (err) {
+			/* XXX: What to do with the error?  */
+			return NULL;
+		}
+	}
+	/* free: ckaid */
+
+	chunk_t e;
+	chunk_t n;
+	{
+		SECKEYPublicKey *nsspk = SECKEY_ExtractPublicKey(&cert->subjectPublicKeyInfo);
+		if (nsspk == NULL) {
+			freeanyckaid(&ckaid);
+			return NULL;
+		}
+		e = clone_secitem_as_chunk(nsspk->u.rsa.publicExponent, "e");
+		n = clone_secitem_as_chunk(nsspk->u.rsa.modulus, "n");
+		SECKEY_DestroyPublicKey(nsspk);
+	}
+	/* free: ckaid, n, e */
+
+	struct pubkey *pk = alloc_thing(struct pubkey, "pubkey");
+	pk->u.rsa.e = e;
+	pk->u.rsa.n = n;
+	pk->u.rsa.ckaid = ckaid;
+	/*
+	 * based on comments in form_keyid, the modulus length
+	 * returned by NSS might contain a leading zero and this
+	 * ignores that when generating the keyid.
+	 */
+	form_keyid(e, n, pk->u.rsa.keyid, &pk->u.rsa.k);
+
+	/*
+	DBG(DBG_PRIVATE, RSA_show_public_key(&pk->u.rsa));
+	*/
+
+	pk->alg = PUBKEY_ALG_RSA;
+	pk->id  = empty_id;
+	pk->issuer = empty_chunk;
+
+	return pk;
+}
+
+struct pubkey *allocate_ECDSA_public_key_nss(CERTCertificate *cert)
 {
 	ckaid_t ckaid;
 	{
