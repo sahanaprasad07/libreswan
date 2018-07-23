@@ -86,7 +86,7 @@ enum keyword_authby {
 	AUTH_NEVER	= 1,
 	AUTH_PSK	= 2,
 	AUTH_RSASIG	= 3,
-	AUTH_ECDSA	= 4
+	AUTH_ECDSA	= 4,
 	AUTH_NULL	= 5,
 };
 

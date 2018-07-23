@@ -221,7 +221,8 @@ static stf_status ikev2_check_asn_hash_blob(enum notify_payload_hash_algorithms 
 		}
 		break;
 	case IKEv2_AUTH_HASH_SHA2_384:
-		if (!(asn_hash_in(&asn_rsa_pss_sha2_384,a_pbs,ASN1_LEN_ALGO_IDENTIFIER,ASN1_SHA2_RSA_PSS_SIZE))) {
+		//if (!(asn_hash_in(&asn_rsa_pss_sha2_384,a_pbs,ASN1_LEN_ALGO_IDENTIFIER,ASN1_SHA2_RSA_PSS_SIZE))) {
+		if (!(asn_hash_in(&asn_ecdsa_sha2_384,a_pbs,ASN1_LEN_ALGO_IDENTIFIER,ASN1_SHA2_ECDSA_SIZE))) {
 			return STF_FAIL;
 		}
 		break;
@@ -725,7 +726,7 @@ static bool v2_check_auth(enum ikev2_auth_method recv_auth,
 		enum notify_payload_hash_algorithms hash_algo;
 		bool hash_check = FALSE;
 
-		if (that_authby != AUTH_RSASIG) {
+		if (that_authby != AUTH_RSASIG || that_authby != AUTH_ECDSA) {
 			libreswan_log("Peer attempted Authentication through Digital Signature but we want %s",
 				enum_name(&ikev2_asym_auth_name, that_authby));
 			return FALSE;
@@ -1139,7 +1140,8 @@ static stf_status ikev2_parent_outI1_common(struct msg_digest *md UNUSED,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS Notify payload */
 	if (!DBGP(IMPAIR_OMIT_HASH_NOTIFY_REQUEST)) {
-		if ((c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+		if (((c->policy & POLICY_RSASIG) || (c->policy & POLICY_ECDSA)) 
+				&& (c->sighash_policy != POL_SIGHASH_NONE)) {
 			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
@@ -1336,7 +1338,7 @@ stf_status ikev2_parent_inI1outR1(struct state *null_st, struct msg_digest *md)
 	}
 
 	/* authentication policy alternatives in order of decreasing preference */
-	static const lset_t policies[] = { POLICY_RSASIG, POLICY_PSK, POLICY_AUTH_NULL };
+	static const lset_t policies[] = { POLICY_ECDSA, POLICY_RSASIG, POLICY_PSK, POLICY_AUTH_NULL };
 
 	lset_t policy;
 	struct connection *c;
@@ -1736,7 +1738,8 @@ static stf_status ikev2_parent_inI1outR1_continue_tail(struct state *st,
 
 	/* Send SIGNATURE_HASH_ALGORITHMS notification only if we received one */
 	if (!DBGP(IMPAIR_IGNORE_HASH_NOTIFY_REQUEST)) {
-		if (st->st_seen_hashnotify && (c->policy & POLICY_RSASIG) && (c->sighash_policy != POL_SIGHASH_NONE)) {
+		if (st->st_seen_hashnotify && ((c->policy & POLICY_RSASIG) || (c->policy & POLICY_ECDSA)) 
+				&& (c->sighash_policy != POL_SIGHASH_NONE)) {
 			if (!ikev2_out_hash_v2n(ISAKMP_NEXT_v2N, &rbody, c->sighash_policy))
 				return STF_INTERNAL_ERROR;
 		}
@@ -2966,6 +2969,9 @@ static stf_status ikev2_send_auth(struct connection *c,
 	case AUTH_RSASIG:
 		a.isaa_type = (pst->st_seen_hashnotify && (c->sighash_policy != POL_SIGHASH_NONE)) ?
 			IKEv2_AUTH_DIGSIG : IKEv2_AUTH_RSA;
+		break;
+	case AUTH_ECDSA:
+		a.isaa_type = IKEv2_AUTH_DIGSIG;
 		break;
 	case AUTH_PSK:
 		a.isaa_type = IKEv2_AUTH_PSK;

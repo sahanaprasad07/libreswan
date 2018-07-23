@@ -231,12 +231,22 @@ const CK_RSA_PKCS_PSS_PARAMS rsa_pss_sha2_384 = {
 const uint8_t size_blob_384[ASN1_LEN_ALGO_IDENTIFIER]=LEN_RSA_PSS_SHA2_BLOB;
 const uint8_t asn_blob_384[ASN1_SHA2_RSA_PSS_SIZE]=RSA_PSS_SHA384_BLOB;
 
+const uint8_t size_blob_ecdsa_384[ASN1_LEN_ALGO_IDENTIFIER]=LEN_ECDSA_SHA2_BLOB;
+const uint8_t asn_blob_ecdsa_384[ASN1_SHA2_ECDSA_SIZE]=ECDSA_SHA384_BLOB;
+
 const struct asn_hash_blob asn_rsa_pss_sha2_384 = {
 	.hash_algo = IKEv2_AUTH_HASH_SHA2_384,
 	.size = ASN1_LEN_ALGO_IDENTIFIER,
 	.size_blob = size_blob_384,
 	.asn_blob_len = ASN1_SHA2_RSA_PSS_SIZE,
 	.asn_blob = asn_blob_384,
+};
+const struct asn_hash_blob asn_ecdsa_sha2_384 = {
+	.hash_algo = IKEv2_AUTH_HASH_SHA2_384,
+	.size = ASN1_LEN_ALGO_IDENTIFIER,
+	.size_blob = size_blob_ecdsa_384,
+	.asn_blob_len = ASN1_SHA2_ECDSA_SIZE,
+	.asn_blob = asn_blob_ecdsa_384,
 };
 
 const struct hash_desc ike_alg_hash_sha2_512 = {

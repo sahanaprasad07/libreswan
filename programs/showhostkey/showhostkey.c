@@ -142,6 +142,19 @@ static void print(struct private_key_stuff *pks,
 		break;
 	}
 
+	case PKK_ECDSA: {
+		printf("ECDSA");
+		char *keyid = pks->u.ECDSA_private_key.pub.keyid;
+		printf(" keyid: %s", keyid[0] ? keyid : "<missing-pubkey>");
+		if (id) {
+			printf(" id: %s", idb);
+		}
+		char *ckaid = ckaid_as_string(pks->u.ECDSA_private_key.pub.ckaid);
+		printf(" ckaid: %s\n", ckaid);
+		pfree(ckaid);
+		break;
+	}
+
 	case PKK_XAUTH:
 		printf("XAUTH keyid: %s\n", idb);
 		if (disclose)

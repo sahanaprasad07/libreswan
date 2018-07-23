@@ -437,7 +437,8 @@ static int starter_whack_add_pubkey(struct starter_config *cfg,
 	init_whack_msg(&msg);
 
 	msg.whack_key = TRUE;
-	msg.pubkey_alg = PUBKEY_ALG_RSA;
+	//msg.pubkey_alg = PUBKEY_ALG_RSA;
+	msg.pubkey_alg = PUBKEY_ALG_ECDSA; /* ASKK */
 	if (end->id && end->rsakey1) {
 		msg.keyid = end->id;
 
@@ -483,7 +484,8 @@ static int starter_whack_add_pubkey(struct starter_config *cfg,
 	init_whack_msg(&msg);
 
 	msg.whack_key = TRUE;
-	msg.pubkey_alg = PUBKEY_ALG_RSA;
+	//msg.pubkey_alg = PUBKEY_ALG_RSA;
+	msg.pubkey_alg = PUBKEY_ALG_ECDSA;
 	if (end->id && end->rsakey2) {
 		/* printf("addkey2: %s\n", lr); */
 

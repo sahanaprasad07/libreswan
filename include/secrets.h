@@ -82,10 +82,12 @@ struct RSA_private_key {
 };
 
 struct ECDSA_public_key {
-    int size;
-    chunk_t pub;
-    chunk_t enc;
-    ckaid_t ckaid;
+	char keyid[KEYID_BUF];
+	int size;
+	unsigned k;
+	chunk_t pub;
+	chunk_t enc;
+	ckaid_t ckaid;
 
 };
 
@@ -94,6 +96,7 @@ struct ECDSA_private_key {
 };
 
 extern void free_RSA_public_content(struct RSA_public_key *rsa);
+extern void free_ECDSA_public_content(struct ECDSA_public_key *ecdsa);
 
 err_t rsa_pubkey_to_rfc_resource_record(chunk_t exponent, chunk_t modulus, chunk_t *rr);
 err_t rfc_resource_record_to_rsa_pubkey(chunk_t rr, chunk_t *exponent, chunk_t *modulus);
@@ -125,6 +128,7 @@ struct private_key_stuff {
 	union {
 		chunk_t preshared_secret;
 		struct RSA_private_key RSA_private_key;
+		struct ECDSA_private_key ECDSA_private_key;
 		/* struct smartcard *smartcard; */
 	} u;
 
@@ -220,7 +224,9 @@ extern struct secret *lsw_get_ppk_by_id(struct secret *secrets, chunk_t ppk_id);
 extern void lock_certs_and_keys(const char *who);
 extern void unlock_certs_and_keys(const char *who);
 extern err_t lsw_add_rsa_secret(struct secret **secrets, CERTCertificate *cert);
+extern err_t lsw_add_ecdsa_secret(struct secret **secrets, CERTCertificate *cert);
 extern struct pubkey *allocate_RSA_public_key_nss(CERTCertificate *cert);
+extern struct pubkey *allocate_ECDSA_public_key_nss(CERTCertificate *cert);
 
 /* these do not clone */
 chunk_t same_secitem_as_chunk(SECItem si);

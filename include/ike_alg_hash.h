@@ -36,3 +36,5 @@ extern const CK_RSA_PKCS_PSS_PARAMS rsa_pss_sha2_512;
 extern const struct asn_hash_blob asn_rsa_pss_sha2_256;
 extern const struct asn_hash_blob asn_rsa_pss_sha2_384;
 extern const struct asn_hash_blob asn_rsa_pss_sha2_512;
+
+extern const struct asn_hash_blob asn_ecdsa_sha2_384;

@@ -33,6 +33,7 @@ typedef struct {
 bool ckaid_starts_with(ckaid_t ckaid, const char *start);
 char *ckaid_as_string(ckaid_t ckaid);
 err_t form_ckaid_rsa(chunk_t modulus, ckaid_t *ckaid);
+err_t form_ckaid_ecdsa(chunk_t pub_value, ckaid_t *ckaid);
 err_t form_ckaid_nss(const SECItem *const nss_ckaid, ckaid_t *ckaid);
 void freeanyckaid(ckaid_t *ckaid);
 void DBG_log_ckaid(const char *prefix, ckaid_t ckaid);

@@ -230,7 +230,7 @@ bool ikev2_calculate_rsa_hash(struct state *st,
 	return TRUE;
 }
 
-static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
+/*static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  size_t hash_len,
 				  const pb_stream *sig_pbs, struct pubkey *kr,
 				  struct state *st, bool version UNUSED,
@@ -241,13 +241,41 @@ static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 	const struct RSA_public_key *k = &kr->u.rsa;
 
 	if (k == NULL)
+		return "1" "no key available"; *//* failure: no key to use */
+
+	/* decrypt the signature -- reversing RSA_sign_hash */
+/*	if (sig_len != k->k)
+		return "1" "SIG length does not match public key length";
+
+	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
+					     sig_len, TRUE, hash_algo);
+	if (ugh != NULL)
+		return ugh;
+
+	unreference_key(&st->st_peer_pubkey);
+	st->st_peer_pubkey = reference_key(kr);
+
+	return NULL;
+}*/
+
+static err_t try_ECDSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
+				  size_t hash_len,
+				  const pb_stream *sig_pbs, struct pubkey *kr,
+				  struct state *st, bool version UNUSED,
+				  enum notify_payload_hash_algorithms hash_algo UNUSED)
+{
+	const u_char *sig_val = sig_pbs->cur;
+	size_t sig_len = pbs_left(sig_pbs);
+	const struct ECDSA_public_key *k = &kr->u.ecdsa;
+
+	if (k == NULL)
 		return "1" "no key available"; /* failure: no key to use */
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
 	if (sig_len != k->k)
 		return "1" "SIG length does not match public key length";
 
-	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
+	err_t ugh = ECDSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
 					     sig_len, TRUE, hash_algo);
 	if (ugh != NULL)
 		return ugh;
@@ -292,8 +320,10 @@ stf_status ikev2_verify_rsa_hash(struct state *st,
 	ikev2_calculate_sighash(st, invertrole, idhash, st->st_firstpacket_him,
 				calc_hash, hash_algo);
 
+/*	retstat = RSA_check_signature_gen(st, calc_hash, hash_len,
+				       sig_pbs, TRUE, hash_algo, try_RSA_signature_v2);*/
 	retstat = RSA_check_signature_gen(st, calc_hash, hash_len,
-				       sig_pbs, TRUE, hash_algo, try_RSA_signature_v2);
+				       sig_pbs, TRUE, hash_algo, try_ECDSA_signature_v2);
 
 	pfree(calc_hash);
 

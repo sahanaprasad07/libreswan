@@ -410,6 +410,98 @@ err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 	return NULL;
 }
 
+
+err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
+			       const u_char *hash_val, size_t hash_len,
+			       const u_char *sig_val, size_t sig_len,
+			       bool version UNUSED,
+			       enum notify_payload_hash_algorithms hash_algo UNUSED)
+{
+	SECKEYPublicKey *publicKey;
+	PRArenaPool *arena;
+	SECStatus retVal;
+	SECItem nss_pub;
+	SECItem signature, data;
+
+	/* Converting n and e to form public key in SECKEYPublicKey data structure */
+
+	arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
+	if (arena == NULL) {
+		PORT_SetError(SEC_ERROR_NO_MEMORY);
+		return "10" "NSS error: Not enough memory to create arena";
+	}
+
+	publicKey = (SECKEYPublicKey *)
+		PORT_ArenaZAlloc(arena, sizeof(SECKEYPublicKey));
+	if (publicKey == NULL) {
+		PORT_FreeArena(arena, PR_FALSE);
+		PORT_SetError(SEC_ERROR_NO_MEMORY);
+		return "11" "NSS error: Not enough memory to create publicKey";
+	}
+
+	publicKey->arena = arena;
+	publicKey->keyType = rsaKey;
+	publicKey->pkcs11Slot = NULL;
+	publicKey->pkcs11ID = CK_INVALID_HANDLE;
+
+	/* make a local copy.  */
+	chunk_t pub = clone_chunk(k->pub, "public value");
+
+	/* Converting n and e to nss_n and nss_e */
+	nss_pub.data = pub.ptr;
+	nss_pub.len = (unsigned int)pub.len;
+	nss_pub.type = siBuffer;
+	libreswan_log("came inside ECDSA_signature_verify_nss for decrypting signature from nss");
+
+	retVal = SECITEM_CopyItem(arena, &publicKey->u.ec.publicValue, &nss_pub);
+/*	if (retVal == SECSuccess) {
+		retVal = SECITEM_CopyItem(arena,
+					  &publicKey->u.rsa.publicExponent,
+					  &nss_e);
+	}*/
+
+	if (retVal != SECSuccess) {
+		pfree(pub.ptr);
+		SECKEY_DestroyPublicKey(publicKey);
+		return "12NSS error: Not able to copy modulus or exponent or both while forming SECKEYPublicKey structure";
+	}
+	signature.type = siBuffer;
+	signature.data = DISCARD_CONST(unsigned char *, sig_val);
+	signature.len  = (unsigned int)sig_len;
+
+	data.type = siBuffer;
+	data.len = (unsigned int)sig_len;
+	data.data = alloc_bytes(data.len, "NSS decrypted signature");
+
+	if (PK11_VerifyRecover(publicKey, &signature, &data,
+				lsw_return_nss_password_file_info()) ==
+	   SECSuccess ) {
+		DBG(DBG_CRYPT,
+			DBG_dump("NSS ECDSA verify: decrypted sig: ", data.data,
+				data.len));
+	} else {
+		DBG(DBG_CRYPT,
+			  DBG_log("NSS ECDSA verify: decrypting signature is failed"));
+		return "13" "NSS error: Not able to decrypt";
+	}
+	if (!memeq(data.data + data.len - hash_len, hash_val, hash_len)) {
+		pfree(data.data);
+		loglog(RC_LOG_SERIOUS, "ECDSA Signature NOT verified");
+		return "14" "NSS error: Not able to verify";
+	}
+
+	DBG(DBG_CRYPT,
+	    DBG_dump("NSS ECDSA verify: hash value: ", hash_val, hash_len));
+
+	pfree(data.data);
+	pfree(pub.ptr);
+	SECKEY_DestroyPublicKey(publicKey);
+
+	DBG(DBG_CRYPT, DBG_log("ECDSA Signature verified"));
+
+	return NULL;
+}
+
 /*
  * Check signature against all RSA public keys we can find.
  * If we need keys from DNS KEY records, and they haven't been fetched,

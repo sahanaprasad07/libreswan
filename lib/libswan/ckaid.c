@@ -90,6 +90,24 @@ err_t form_ckaid_rsa(chunk_t modulus, ckaid_t *ckaid)
 	return err;
 }
 
+err_t form_ckaid_ecdsa(chunk_t pub_value, ckaid_t *ckaid)
+{
+	/*
+	 * Compute the CKAID directly using the public value. - keep old
+	 * configurations hobbling along.
+	 */
+	SECItem nss_pub_value = same_chunk_as_secitem(pub_value, siBuffer);
+	SECItem *nss_ckaid = PK11_MakeIDFromPubKey(&nss_pub_value);
+	if (nss_ckaid == NULL) {
+		return "unable to compute 'CKAID' from public value";
+	}
+	DBG(DBG_CONTROLMORE, DBG_dump("computed ecdsa CKAID",
+				      nss_ckaid->data, nss_ckaid->len));
+	err_t err = form_ckaid_nss(nss_ckaid, ckaid);
+	SECITEM_FreeItem(nss_ckaid, PR_TRUE);
+	return err;
+}
+
 void freeanyckaid(ckaid_t *ckaid)
 {
 	if (ckaid && ckaid->nss) {

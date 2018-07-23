@@ -839,7 +839,7 @@ static void load_end_nss_certificate(const char *which, CERTCertificate *cert,
 		if (pk->u.rsa.modulus.len < FIPS_MIN_RSA_KEY_SIZE) {
 			whack_log(RC_FATAL,
 				"FIPS: Rejecting cert with key size under %d",
-				FIPS_MIN_RSA_KEY_SIZE);
+				FIPS_MIN_RSA_KEY_SIZE); /* ASKK */
 			SECKEY_DestroyPublicKey(pk);
 			return;
 		}
@@ -1396,6 +1396,12 @@ void add_connection(const struct whack_message *wm)
 						conflict = TRUE;
 					}
 					break;
+				case AUTH_ECDSA:
+					if (auth_pol != POLICY_ECDSA && auth_pol != LEMPTY) {
+						loglog(RC_FATAL, "leftauthby=ecdsa but authby= is not ecdsa");
+						conflict = TRUE;
+					}
+					break;
 				case AUTH_NULL:
 					if (auth_pol != POLICY_AUTH_NULL && auth_pol != LEMPTY) {
 						loglog(RC_FATAL, "leftauthby=null but authby= is not null");
@@ -1805,6 +1811,8 @@ void add_connection(const struct whack_message *wm)
 	if (wm->left.authby == AUTH_UNSET && wm->right.authby == AUTH_UNSET) {
 		if (c->policy & POLICY_RSASIG)
 			c->spd.this.authby = c->spd.that.authby = AUTH_RSASIG;
+		else if (c->policy & POLICY_ECDSA)
+			c->spd.this.authby = c->spd.that.authby = AUTH_ECDSA;
 		else if (c->policy & POLICY_PSK)
 			c->spd.this.authby = c->spd.that.authby = AUTH_PSK;
 		else if (c->policy & POLICY_AUTH_NULL)
@@ -1816,6 +1824,9 @@ void add_connection(const struct whack_message *wm)
 		switch (wm->left.authby) {
 		case AUTH_RSASIG:
 			c->policy |= POLICY_RSASIG;
+			break;
+		case AUTH_ECDSA:
+			c->policy |= POLICY_ECDSA;
 			break;
 		case AUTH_PSK:
 			c->policy |= POLICY_PSK;
