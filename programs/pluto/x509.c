@@ -526,7 +526,7 @@ static void create_cert_pubkey_ecdsa(struct pubkey **pkp,
 				      const struct id *id,
 				      CERTCertificate *cert)
 {
-	libreswan_log("create_cert_pubkey_ecdsa");
+	libreswan_log("create_cert_pubkey_ecdsa from x509 allocate_ECDSA_public_key_nss");
 	struct pubkey *pk = allocate_ECDSA_public_key_nss(cert);
 
 	passert(pk != NULL);
@@ -774,7 +774,7 @@ static lsw_cert_ret pluto_process_certs(struct state *st,
 		return LSW_CERT_ID_OK;
 	} else if ((ret & VERIFY_RET_OK) && end_cert != NULL) {
 		libreswan_log("certificate verified OK: %s", end_cert->subjectName);
-		add_rsa_pubkey_from_cert(&c->spd.that.id, end_cert);
+	//	add_rsa_pubkey_from_cert(&c->spd.that.id, end_cert);
 		add_ecdsa_pubkey_from_cert(&c->spd.that.id, end_cert);
 
 		/* if we already verified ID, no need to do it again */

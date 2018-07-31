@@ -145,7 +145,7 @@ bool ikev2_calculate_rsa_hash(struct state *st,
 	const struct RSA_private_key *k = get_RSA_private_key(c);
 	unsigned int sz;
 	unsigned int hash_digest_size;
-
+	libreswan_log("ikev2_calculate_rsa_hash get_RSA_private_key");
 	switch (hash_algo) {
 	case IKEv2_AUTH_HASH_SHA1:
 		hash_digest_size = SHA1_DIGEST_SIZE + RSA_SHA1_SIGNED_OCTETS;
@@ -268,14 +268,16 @@ static err_t try_ECDSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 	const u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct ECDSA_public_key *k = &kr->u.ecdsa;
+	libreswan_log("sig_length is %zu",sig_len);
+	libreswan_log("key_length is %d",k->k);
 
 	if (k == NULL)
 		return "1" "no key available"; /* failure: no key to use */
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
-	if (sig_len != k->k)
-		return "1" "SIG length does not match public key length";
-
+//	if (sig_len != k->k)
+//		return "1" "SIG length does not match public key length";
+	DBG_dump("sig_val",sig_val,sig_len);
 	err_t ugh = ECDSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
 					     sig_len, TRUE, hash_algo);
 	if (ugh != NULL)

@@ -194,7 +194,8 @@ static stf_status ikev2_send_asn_hash_blob(enum notify_payload_hash_algorithms h
 		}
 		break;
 	case IKEv2_AUTH_HASH_SHA2_384:
-		sendstat = asn_hash_out(&asn_rsa_pss_sha2_384,a_pbs);
+		//sendstat = asn_hash_out(&asn_rsa_pss_sha2_384,a_pbs);
+		sendstat = asn_hash_out(&asn_ecdsa_sha2_384,a_pbs);
 		if (sendstat != STF_OK) {
 			return STF_INTERNAL_ERROR;
 		}

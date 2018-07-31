@@ -84,6 +84,7 @@ struct RSA_private_key {
 struct ECDSA_public_key {
 	char keyid[KEYID_BUF];
 	unsigned int k;
+	chunk_t ecParams;
 	chunk_t pub;
 	ckaid_t ckaid;
 

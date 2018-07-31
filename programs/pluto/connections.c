@@ -861,6 +861,7 @@ static void load_end_nss_certificate(const char *which, CERTCertificate *cert,
 	DBG(DBG_X509, DBG_log("loaded %s certificate \'%s\'", which, name));
 
 	add_rsa_pubkey_from_cert(&d_end->id, cert);
+	libreswan_log("load_end_nss_certificate add_ecdsa_pubkey_from_cert");
 	add_ecdsa_pubkey_from_cert(&d_end->id, cert);
 	d_end->cert.ty = CERT_X509_SIGNATURE;
 	d_end->cert.u.nss_cert = cert;
@@ -3165,6 +3166,14 @@ struct connection *refine_host_connection(const struct state *st,
 				return c;
 			}
 			break;
+	/*	case AUTH_ECDSA:
+			my_ECDSA_pri = get_RSA_private_key(c);
+			if (my_ECDSA_pri == NULL) {
+				loglog(RC_LOG_SERIOUS, "cannot find ECDSA key");*/
+				 /* cannot determine my RSA private key, so not switching */
+			/*	return c;
+			}
+			break;*/
 		default:
 			/* don't die on bad_case(auth); */
 

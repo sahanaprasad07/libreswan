@@ -424,7 +424,7 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	SECKEYPublicKey *publicKey;
 	PRArenaPool *arena;
 	SECStatus retVal;
-	SECItem nss_pub;
+	SECItem nss_pub, nss_ecParams;
 	SECItem signature, data;
 
 	/* Converting n and e to form public key in SECKEYPublicKey data structure */
@@ -444,27 +444,33 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	}
 
 	publicKey->arena = arena;
-	publicKey->keyType = rsaKey;
+	publicKey->keyType = ecKey;
 	publicKey->pkcs11Slot = NULL;
 	publicKey->pkcs11ID = CK_INVALID_HANDLE;
 
 	/* make a local copy.  */
 	chunk_t pub = clone_chunk(k->pub, "public value");
+	chunk_t ecParams = clone_chunk(k->ecParams, "EC Parameters");
 
 	/* Converting n and e to nss_n and nss_e */
 	nss_pub.data = pub.ptr;
 	nss_pub.len = (unsigned int)pub.len;
 	nss_pub.type = siBuffer;
 	libreswan_log("came inside ECDSA_signature_verify_nss for decrypting signature from nss");
+	nss_ecParams.data = ecParams.ptr;
+	nss_ecParams.len = (unsigned int)ecParams.len;
+	nss_ecParams.type = siBuffer;
 
 	retVal = SECITEM_CopyItem(arena, &publicKey->u.ec.publicValue, &nss_pub);
-/*	if (retVal == SECSuccess) {
+	if (retVal == SECSuccess) {
+	libreswan_log(" Success came inside ECDSA_signature_verify_nss and retVal is not success?");
 		retVal = SECITEM_CopyItem(arena,
-					  &publicKey->u.rsa.publicExponent,
-					  &nss_e);
-	}*/
+					  &publicKey->u.ec.DEREncodedParams,
+					  &nss_ecParams);
+	}
 
 	if (retVal != SECSuccess) {
+	libreswan_log("came inside ECDSA_signature_verify_nss and retVal is not success?");
 		pfree(pub.ptr);
 		SECKEY_DestroyPublicKey(publicKey);
 		return "12NSS error: Not able to copy modulus or exponent or both while forming SECKEYPublicKey structure";
@@ -477,28 +483,57 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	data.len = (unsigned int)sig_len;
 	data.data = alloc_bytes(data.len, "NSS decrypted signature");
 
-	if (PK11_VerifyRecover(publicKey, &signature, &data,
-				lsw_return_nss_password_file_info()) ==
-	   SECSuccess ) {
+	//unsigned char *hash_data = alloc_bytes(hash_len + 1 , "hash length");
+	/*unsigned char *hash_data = alloc_bytes(hash_len , "hash length");
+
+	//data.len = hash_len + 1;
+	data.len = hash_len ;
+	memcpy(hash_data , DISCARD_CONST(u_char *, hash_val), hash_len);
+	data.data = hash_data;*/
+		
+	DBG(DBG_CRYPT,
+		DBG_dump("data.data: data.len: ", data.data,
+			data.len));
+		if (PK11_VerifyRecover(publicKey, &signature, &data,
+				       lsw_return_nss_password_file_info()) ==
+		   SECSuccess ) {
+		libreswan_log("PK11_VerifyRecover IF");
+		       DBG(DBG_CRYPT,
+			   DBG_dump("NSS RSA verify: decrypted sig: ", data.data,
+				     data.len));
+		} else {
+		libreswan_log("PK11_VerifyRecover ELSE");
+			DBG(DBG_CRYPT,
+			    DBG_log("NSS RSA verify: decrypting signature is failed"));
+			return "13" "NSS error: Not able to decrypt";
+		}
+		if (!memeq(data.data + data.len - hash_len, hash_val, hash_len)) {
+			pfree(data.data);
+			loglog(RC_LOG_SERIOUS, "RSA Signature NOT verified");
+			return "14" "NSS error: Not able to verify";
+		}
+
+		pfree(data.data);
+
+/*	if (PK11_VerifyWithMechanism(publicKey, CKM_ECDSA, NULL, &signature, &data,
+			lsw_return_nss_password_file_info()) == SECSuccess ) {
+	libreswan_log("came inside ECDSA_signature_verify_nss PK11_VerifyRecover");
 		DBG(DBG_CRYPT,
 			DBG_dump("NSS ECDSA verify: decrypted sig: ", data.data,
 				data.len));
 	} else {
+	libreswan_log("came inside ECDSA_signature_verify_nss PK11_VerifyRecover ELSE");
 		DBG(DBG_CRYPT,
 			  DBG_log("NSS ECDSA verify: decrypting signature is failed"));
 		return "13" "NSS error: Not able to decrypt";
-	}
-	if (!memeq(data.data + data.len - hash_len, hash_val, hash_len)) {
-		pfree(data.data);
-		loglog(RC_LOG_SERIOUS, "ECDSA Signature NOT verified");
-		return "14" "NSS error: Not able to verify";
 	}
 
 	DBG(DBG_CRYPT,
 	    DBG_dump("NSS ECDSA verify: hash value: ", hash_val, hash_len));
 
-	pfree(data.data);
+	pfree(hash_data);*/
 	pfree(pub.ptr);
+	pfree(ecParams.ptr);
 	SECKEY_DestroyPublicKey(publicKey);
 
 	DBG(DBG_CRYPT, DBG_log("ECDSA Signature verified"));
@@ -740,6 +775,7 @@ static struct secret *lsw_get_secret(const struct connection *c,
 	if (kind == PKK_ECDSA && c->spd.this.cert.ty == CERT_X509_SIGNATURE &&
 			c->spd.this.cert.u.nss_cert != NULL) {
 		/* Must free MY_PUBLIC_KEY */
+		libreswan_log("keys.c lsw_get_secret allocate_ECDSA_public_key_nss");
 		struct pubkey *my_public_key = allocate_ECDSA_public_key_nss(
 			c->spd.this.cert.u.nss_cert);
 
@@ -945,6 +981,7 @@ const chunk_t *get_ppk_by_id(const chunk_t *ppk_id)
  */
 const struct RSA_private_key *get_RSA_private_key(const struct connection *c)
 {
+	libreswan_log(" From ikev2_calculate_rsa_hash get_RSA_private_key ");
 	struct secret *s = lsw_get_secret(c,
 					  &c->spd.this.id, &c->spd.that.id,
 					  PKK_RSA, TRUE);
@@ -1131,7 +1168,11 @@ err_t load_nss_cert_secret(CERTCertificate *cert)
 
 	if (cert_key_is_rsa(cert)) {
 		return lsw_add_rsa_secret(&pluto_secrets, cert);
-	} else {
+	} else if (cert_key_is_ecdsa(cert)) {
+		libreswan_log("load_nss_cert_secret cert_key_is_ecdsa");
+		return lsw_add_ecdsa_secret(&pluto_secrets, cert);
+	} 
+	else {
 		return "NSS cert not supported";
 	}
 }

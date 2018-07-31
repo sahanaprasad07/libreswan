@@ -92,6 +92,7 @@ err_t form_ckaid_rsa(chunk_t modulus, ckaid_t *ckaid)
 
 err_t form_ckaid_ecdsa(chunk_t pub_value, ckaid_t *ckaid)
 {
+	libreswan_log("form_ckaid_ecdsa");
 	/*
 	 * Compute the CKAID directly using the public value. - keep old
 	 * configurations hobbling along.

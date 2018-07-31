@@ -1442,40 +1442,46 @@ struct pubkey *allocate_RSA_public_key_nss(CERTCertificate *cert)
 
 struct pubkey *allocate_ECDSA_public_key_nss(CERTCertificate *cert)
 {
+	libreswan_log("allocate_ECDSA_public_key_nss");
 	ckaid_t ckaid;
-	{
-		SECItem *nss_ckaid = PK11_GetLowLevelKeyIDForCert(NULL, cert,
-								  lsw_return_nss_password_file_info());
-		if (nss_ckaid == NULL) {
-			return NULL;
-		}
-		err_t err = form_ckaid_nss(nss_ckaid, &ckaid);
-		SECITEM_FreeItem(nss_ckaid, PR_TRUE);
-		if (err) {
-			/* XXX: What to do with the error?  */
-			return NULL;
-		}
-	}
-	/* free: ckaid */
-
 	chunk_t pub;
-	int k;
+	chunk_t ecParams;
+	unsigned int k;
+	char keyid[KEYID_BUF];
 	{
 		SECKEYPublicKey *nsspk = SECKEY_ExtractPublicKey(&cert->subjectPublicKeyInfo);
-		if (nsspk == NULL) {
-			freeanyckaid(&ckaid);
-			return NULL;
-		}
+
 		pub = clone_secitem_as_chunk(nsspk->u.ec.publicValue, "pub");
-		k = nsspk->u.ec.size;
+		ecParams = clone_secitem_as_chunk(nsspk->u.ec.DEREncodedParams, "ecParams");
+
+		DBG_dump("pub", nsspk->u.ec.publicValue.data, nsspk->u.ec.publicValue.len);
+		DBG_dump("ecParams", nsspk->u.ec.DEREncodedParams.data, nsspk->u.ec.DEREncodedParams.len);
+
+		memcpy(keyid, nsspk->u.ec.publicValue.data, KEYID_BUF-1);
+		DBG_dump("keyid", keyid, KEYID_BUF-1);
+
+		k = nsspk->u.ec.publicValue.len;
+
 		SECKEY_DestroyPublicKey(nsspk);
 	}
-	/* free: ckaid, pub */
+
 
 	struct pubkey *pk = alloc_thing(struct pubkey, "pubkey");
 	pk->u.ecdsa.pub = pub;
-	pk->u.ecdsa.ckaid = ckaid;
+	libreswan_log("pub length %zd",pk->u.ecdsa.pub.len);
 	pk->u.ecdsa.k = k;
+	libreswan_log("k length %d",pk->u.ecdsa.k);
+	pk->u.ecdsa.ecParams = ecParams;
+
+	/* keyid */
+	keyblobtoid((const unsigned char *)keyid,KEYID_BUF,pk->u.ecdsa.keyid,KEYID_BUF);
+	
+	/* ckaid */
+	err_t err =form_ckaid_ecdsa(pub,&ckaid);
+		if (err) {
+			return NULL;
+		}
+	pk->u.ecdsa.ckaid = ckaid;
 	/*
 	 * based on comments in form_keyid, the modulus length
 	 * returned by NSS might contain a leading zero and this
