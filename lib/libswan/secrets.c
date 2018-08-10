@@ -336,6 +336,7 @@ struct secret *lsw_foreach_secret(struct secret *secrets,
 	struct secret *s;
 
 	for (s = secrets; s != NULL; s = s->next) {
+		libreswan_log(" lsw_foreach_secret");
 		struct private_key_stuff *pks = &s->pks;
 		int result = (*func)(s, pks, uservoid);
 
@@ -363,17 +364,18 @@ static int lsw_check_secret_byid(struct secret *secret UNUSED,
 	DBG(DBG_CONTROL,
 		DBG_log("searching for certificate %s:%s vs %s:%s",
 			enum_name(&pkk_names, pks->kind),
-			(pks->kind == PKK_RSA ?
-				pks->u.RSA_private_key.pub.keyid : "N/A"),
+			(pks->kind == PKK_ECDSA ? /*RSA changed */
+				pks->u.ECDSA_private_key.pub.keyid : "N/A"),
 			enum_name(&pkk_names, sb->kind),
-			sb->my_public_key->u.rsa.keyid);
+			sb->my_public_key->u.ecdsa.keyid);
 		);
+#if 0
 	if (pks->kind == sb->kind &&
 		same_RSA_public_key(&pks->u.RSA_private_key.pub,
 				&sb->my_public_key->u.rsa))
 		return 0;
-
-	return 1;
+#endif
+	return 0;
 }
 
 /* ??? declared in keys.h */
@@ -381,6 +383,7 @@ struct secret *lsw_find_secret_by_public_key(struct secret *secrets,
 					struct pubkey *my_public_key,
 					enum PrivateKeyKind kind)
 {
+	libreswan_log("lsw_find_secret_by_public_key lsw_get_secret");
 	struct secret_byid sb;
 
 	sb.kind = kind;
@@ -536,6 +539,7 @@ struct secret *lsw_find_secret_by_id(struct secret *secrets,
 						 * private keys. This ought to
 						 * work.
 						 */
+						libreswan_log("came into RSA?");
 						same = same_RSA_public_key(
 							&s->pks.u.RSA_private_key.pub,
 							&best->pks.u.RSA_private_key.pub);

@@ -72,6 +72,7 @@
 #include <secerr.h>
 #include <secport.h>
 #include <time.h>
+#include <blapi.h>
 #include "lswconf.h"
 #include "lswnss.h"
 #include "secrets.h"
@@ -268,6 +269,92 @@ int sign_hash(const struct RSA_private_key *k,
 	return signature.len;
 }
 
+int sign_hash_ECDSA(const struct ECDSA_private_key *k,
+		  const u_char *hash_val, size_t hash_len,
+		  u_char *sig_val UNUSED, size_t sig_len UNUSED, bool version UNUSED,
+		  enum notify_payload_hash_algorithms hash_algo UNUSED)
+{
+	SECKEYPrivateKey *privateKey = NULL;
+	//ECPrivateKey *privateKey;
+	SECItem signature;
+	SECItem data;
+	PK11SlotInfo *slot = NULL;
+	DBG(DBG_CRYPT, DBG_log("ECDSA_sign_hash: Started using NSS"));
+
+	slot = PK11_GetInternalKeySlot();
+	if (slot == NULL) {
+		loglog(RC_LOG_SERIOUS,
+		       "ECDSA_sign_hash: Unable to find (slot security) device (err %d)",
+		       PR_GetError());
+		return 0;
+	}
+
+	/* XXX: is there no way to detect if we _need_ to authenticate ?? */
+	if (PK11_Authenticate(slot, PR_FALSE,
+			       lsw_return_nss_password_file_info()) == SECSuccess) {
+		DBG(DBG_CRYPT,
+		    DBG_log("NSS: Authentication to NSS successful"));
+	} else {
+		DBG(DBG_CRYPT,
+		    DBG_log("NSS: Authentication to NSS either failed or not required,if NSS DB without password"));
+	}
+
+	DBG_dump("nss", k->pub.ckaid.nss->data, k->pub.ckaid.nss->len);
+
+	privateKey = PK11_FindKeyByKeyID(slot, k->pub.ckaid.nss,
+					 lsw_return_nss_password_file_info());
+
+	if (privateKey == NULL) {
+		DBG(DBG_CRYPT,
+		    DBG_log("NSS: Can't find the private key from the NSS CKA_ID"));
+		CERTCertificate *cert = get_cert_by_ckaid_t_from_nss(k->pub.ckaid);
+		if (cert == NULL) {
+			loglog(RC_LOG_SERIOUS, "Can't find the certificate or private key from the NSS CKA_ID");
+			return 0;
+		}
+		privateKey = PK11_FindKeyByAnyCert(cert, lsw_return_nss_password_file_info());
+		CERT_DestroyCertificate(cert);
+		if (privateKey == NULL) {
+			libreswan_log("sign_hash_ECDSA PK11_Authenticate privateKey NULL PK11_FindKeyByAnyCert");
+			loglog(RC_LOG_SERIOUS, "Can't find the private key from the certificate (found using NSS CKA_ID");
+			return 0;
+		}
+	}
+
+//	pexpect((int)sig_len == PK11_SignatureLen(privateKey));
+
+	PK11_FreeSlot(slot);
+
+	data.type = siBuffer;
+	data.len = hash_len;
+	data.data = DISCARD_CONST(u_char *, hash_val);
+
+	signature.len = PK11_SignatureLen(privateKey);
+	libreswan_log("signature.len %d",signature.len);
+	//signature.data = (unsigned char *)PORT_Alloc(signature.len);
+	signature.data = alloc_bytes(signature.len, "signature data:");
+	
+			SECStatus s = PK11_Sign(privateKey, &signature, &data);
+	LSWDBGP(DBG_MASK, buf) {
+		lswlogf(buf, "failed to find private key?");
+		lswlog_nss_error(buf);
+	}
+			//SECStatus s = ECDSA_SignDigest(privateKey, &signature, &data);
+
+			if (s != SECSuccess) {
+				libreswan_log("PK11_Sign failed?");
+				loglog(RC_LOG_SERIOUS,
+					"ECDSA_sign_hash: sign function failed (%d)",
+					PR_GetError());
+				return 0;
+			}
+
+	SECKEY_DestroyPrivateKey(privateKey);
+
+	DBG(DBG_CRYPT, DBG_log("ECDSA_sign_hash: Ended using NSS"));
+	return signature.len;
+}
+
 err_t RSA_signature_verify_nss(const struct RSA_public_key *k,
 			       const u_char *hash_val, size_t hash_len,
 			       const u_char *sig_val, size_t sig_len,
@@ -421,7 +508,7 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 			       enum notify_payload_hash_algorithms hash_algo UNUSED)
 {
 	libreswan_log("ECDSA_signature_verify_nss");
-	SECKEYPublicKey *publicKey;
+	ECPublicKey publicKey;
 	PRArenaPool *arena;
 	SECStatus retVal;
 	SECItem nss_pub, nss_ecParams;
@@ -434,7 +521,7 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 		PORT_SetError(SEC_ERROR_NO_MEMORY);
 		return "10" "NSS error: Not enough memory to create arena";
 	}
-
+#if 0
 	publicKey = (SECKEYPublicKey *)
 		PORT_ArenaZAlloc(arena, sizeof(SECKEYPublicKey));
 	if (publicKey == NULL) {
@@ -446,7 +533,9 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	publicKey->arena = arena;
 	publicKey->keyType = ecKey;
 	publicKey->pkcs11Slot = NULL;
-	publicKey->pkcs11ID = CK_INVALID_HANDLE;
+	publicKey->pkcs11ID = CK_INVALID_HANDLE;*/
+#endif
+        publicKey.ecParams.arena = arena;
 
 	/* make a local copy.  */
 	chunk_t pub = clone_chunk(k->pub, "public value");
@@ -461,36 +550,56 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	nss_ecParams.len = (unsigned int)ecParams.len;
 	nss_ecParams.type = siBuffer;
 
-	retVal = SECITEM_CopyItem(arena, &publicKey->u.ec.publicValue, &nss_pub);
+	//retVal = SECITEM_CopyItem(arena, &publicKey->u.ec.publicValue, &nss_pub);
+	retVal = SECITEM_CopyItem(arena, &publicKey.publicValue, &nss_pub);
+
 	if (retVal == SECSuccess) {
-	libreswan_log(" Success came inside ECDSA_signature_verify_nss and retVal is not success?");
+		libreswan_log(" Success came inside ECDSA_signature_verify_nss and retVal is not success?");
 		retVal = SECITEM_CopyItem(arena,
-					  &publicKey->u.ec.DEREncodedParams,
+					 // &publicKey->u.ec.ecParams.DEREncoding,
+					  &publicKey.ecParams.DEREncoding,
 					  &nss_ecParams);
+		EC_FillParams(arena, &publicKey.ecParams.DEREncoding, &publicKey.ecParams);
 	}
 
+	libreswan_log("olen: %d",publicKey.ecParams.order.len);
+
 	if (retVal != SECSuccess) {
-	libreswan_log("came inside ECDSA_signature_verify_nss and retVal is not success?");
+		libreswan_log("came inside ECDSA_signature_verify_nss and retVal is not success?");
 		pfree(pub.ptr);
-		SECKEY_DestroyPublicKey(publicKey);
+	//	SECKEY_DestroyPublicKey(publicKey);
 		return "12NSS error: Not able to copy modulus or exponent or both while forming SECKEYPublicKey structure";
 	}
+
 	signature.type = siBuffer;
 	signature.data = DISCARD_CONST(unsigned char *, sig_val);
 	signature.len  = (unsigned int)sig_len;
 
 	data.type = siBuffer;
-	data.len = (unsigned int)sig_len;
+	/*data.len = (unsigned int)sig_len;
 	data.data = alloc_bytes(data.len, "NSS decrypted signature");
 
-	//unsigned char *hash_data = alloc_bytes(hash_len + 1 , "hash length");
-	/*unsigned char *hash_data = alloc_bytes(hash_len , "hash length");
+	unsigned char *hash_data = alloc_bytes(hash_len + 1 , "hash length");*/
+	unsigned char *hash_data = alloc_bytes(hash_len + 1, "hash length");
 
-	//data.len = hash_len + 1;
-	data.len = hash_len ;
+	data.len = hash_len + 1;
 	memcpy(hash_data , DISCARD_CONST(u_char *, hash_val), hash_len);
-	data.data = hash_data;*/
-		
+	data.data = hash_data;
+	if (ECDSA_VerifyDigest(&publicKey, &signature, &data) == SECSuccess) {
+
+		libreswan_log("ECDSA_VerifyDigest IF");
+		       DBG(DBG_CRYPT,
+			   DBG_dump("NSS RSA verify: decrypted sig: ", data.data,
+				     data.len));
+		} else {
+			LSWDBGP(DBG_MASK, buf) {
+				lswlogf(buf, "failed to decrypt");
+				lswlog_nss_error(buf);
+			}
+		libreswan_log("ECDSA_VerifyDigest ELSE");
+			return "13" "NSS error: Not able to decrypt";
+		}
+# if 0		
 	DBG(DBG_CRYPT,
 		DBG_dump("data.data: data.len: ", data.data,
 			data.len));
@@ -515,7 +624,7 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 
 		pfree(data.data);
 
-/*	if (PK11_VerifyWithMechanism(publicKey, CKM_ECDSA, NULL, &signature, &data,
+	if (PK11_VerifyWithMechanism(publicKey, CKM_ECDSA, NULL, &signature, &data,
 			lsw_return_nss_password_file_info()) == SECSuccess ) {
 	libreswan_log("came inside ECDSA_signature_verify_nss PK11_VerifyRecover");
 		DBG(DBG_CRYPT,
@@ -531,13 +640,13 @@ err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 	DBG(DBG_CRYPT,
 	    DBG_dump("NSS ECDSA verify: hash value: ", hash_val, hash_len));
 
-	pfree(hash_data);*/
+	pfree(hash_data);
 	pfree(pub.ptr);
 	pfree(ecParams.ptr);
-	SECKEY_DestroyPublicKey(publicKey);
+//	SECKEY_DestroyPublicKey(publicKey);
 
 	DBG(DBG_CRYPT, DBG_log("ECDSA Signature verified"));
-
+# endif
 	return NULL;
 }
 
@@ -1001,6 +1110,31 @@ const struct RSA_private_key *get_RSA_private_key(const struct connection *c)
 }
 
 /*
+ * find the appropriate ECDSA private key (see get_secret).
+ * Failure is indicated by a NULL pointer.
+ */
+const struct ECDSA_private_key *get_ECDSA_private_key(const struct connection *c)
+{
+	libreswan_log(" From ikev2_calculate_rsa_hash get_ECDSA_private_key ");
+	struct secret *s = lsw_get_secret(c,
+					  &c->spd.this.id, &c->spd.that.id,
+					  PKK_ECDSA, TRUE);
+	const struct private_key_stuff *pks = NULL;
+
+	if (s != NULL)
+		pks = lsw_get_pks(s);
+
+	DBG(DBG_CRYPT, {
+		if (s == NULL)
+			DBG_log("no ECDSA key Found");
+		else
+			DBG_log("ecdsa key %s found",
+				pks->u.ECDSA_private_key.pub.keyid);
+	});
+	return s == NULL ? NULL : &pks->u.ECDSA_private_key;
+}
+
+/*
  * public key machinery
  */
 
@@ -1165,7 +1299,7 @@ err_t load_nss_cert_secret(CERTCertificate *cert)
 	if (cert == NULL) {
 		return "NSS cert not found";
 	}
-
+	libreswan_log("lsw_get_secret load_nss_cert_secret");
 	if (cert_key_is_rsa(cert)) {
 		return lsw_add_rsa_secret(&pluto_secrets, cert);
 	} else if (cert_key_is_ecdsa(cert)) {

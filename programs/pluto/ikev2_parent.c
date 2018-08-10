@@ -3030,7 +3030,7 @@ static stf_status ikev2_send_auth(struct connection *c,
 				return STF_FAIL;
 			}
 
-			if (!ikev2_calculate_rsa_hash(pst, role, idhash_out, &a_pbs,
+			if (!ikev2_calculate_ecdsa_hash(pst, role, idhash_out, &a_pbs,
 				FALSE, /* store-only not set */
 				NULL /* store-only chunk unused */,
 				hash_algo)) {

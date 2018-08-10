@@ -34,9 +34,14 @@ struct connection;
 struct RSA_private_key;
 struct RSA_public_key;
 struct ECDSA_public_key;
+struct ECDSA_private_key;
 struct pubkey;
 
 extern int sign_hash(const struct RSA_private_key *k, const u_char *hash_val,
+		      size_t hash_len, u_char *sig_val, size_t sig_len, bool version,
+		      enum notify_payload_hash_algorithms hash_algo);
+
+extern int sign_hash_ECDSA(const struct ECDSA_private_key *k, const u_char *hash_val,
 		      size_t hash_len, u_char *sig_val, size_t sig_len, bool version,
 		      enum notify_payload_hash_algorithms hash_algo);
 
@@ -50,6 +55,8 @@ extern err_t ECDSA_signature_verify_nss(const struct ECDSA_public_key *k,
 				        bool version, enum notify_payload_hash_algorithms hash_algo);
 
 extern const struct RSA_private_key *get_RSA_private_key(
+	const struct connection *c);
+extern const struct ECDSA_private_key *get_ECDSA_private_key(
 	const struct connection *c);
 
 extern bool has_private_key(cert_t cert);

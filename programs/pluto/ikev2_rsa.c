@@ -58,6 +58,7 @@
 #include "secrets.h"
 #include "crypt_hash.h"
 #include "ietf_constants.h"
+#include "asn1.h"
 
 static u_char der_digestinfo[] = {
 	0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e,
@@ -90,15 +91,20 @@ static void ikev2_calculate_sighash(struct state *st,
 	    DBG_dump("idhash", idhash, st->st_oakley.ta_prf->prf_output_size));
 
 	struct crypt_hash *ctx;
+       // const struct hash_desc *hash;
 
 	switch (hash_algo) {
 	case IKEv2_AUTH_HASH_SHA1:
+         //       hash = &ike_alg_hash_sha1;
+           //     break;
+
 		ctx = crypt_hash_init(&ike_alg_hash_sha1,"sighash", DBG_CRYPT);
 		break;
 	case IKEv2_AUTH_HASH_SHA2_256:
 		ctx = crypt_hash_init(&ike_alg_hash_sha2_256,"sighash", DBG_CRYPT);
 		break;
 	case IKEv2_AUTH_HASH_SHA2_384:
+		libreswan_log("came to calculate hash for sha2_384");
 		ctx = crypt_hash_init(&ike_alg_hash_sha2_384,"sighash", DBG_CRYPT);
 		break;
 	case IKEv2_AUTH_HASH_SHA2_512:
@@ -107,6 +113,7 @@ static void ikev2_calculate_sighash(struct state *st,
 	default:
 		bad_case(hash_algo);
 	}
+       // ctx = crypt_hash_init(hash, "sighash", DBG_CRYPT);
 
 	crypt_hash_digest_chunk(ctx, "first packet", firstpacket);
 	crypt_hash_digest_chunk(ctx, "nunce", *nonce);
@@ -114,6 +121,7 @@ static void ikev2_calculate_sighash(struct state *st,
 	/* we took the PRF(SK_d,ID[ir]'), so length is prf hash length */
 	crypt_hash_digest_bytes(ctx, "IDHASH", idhash,
 				st->st_oakley.ta_prf->prf_output_size);
+       // crypt_hash_final_bytes(&ctx, sig_octets, hash);
 	switch (hash_algo) {
 	case IKEv2_AUTH_HASH_SHA1:
 		crypt_hash_final_bytes(&ctx, sig_octets, ike_alg_hash_sha1.hash_digest_len);
@@ -122,6 +130,7 @@ static void ikev2_calculate_sighash(struct state *st,
 		crypt_hash_final_bytes(&ctx, sig_octets, ike_alg_hash_sha2_256.hash_digest_len);
 		break;
 	case IKEv2_AUTH_HASH_SHA2_384:
+		libreswan_log("came to calculate hash for sha2_384 crypt_hash_final_bytes");
 		crypt_hash_final_bytes(&ctx, sig_octets, ike_alg_hash_sha2_384.hash_digest_len);
 		break;
 	case IKEv2_AUTH_HASH_SHA2_512:
@@ -230,7 +239,90 @@ bool ikev2_calculate_rsa_hash(struct state *st,
 	return TRUE;
 }
 
-/*static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
+
+bool ikev2_calculate_ecdsa_hash(struct state *st,
+			      enum original_role role,
+			      unsigned char *idhash,
+			      pb_stream *a_pbs,
+			      bool calc_no_ppk_auth,
+			      chunk_t *no_ppk_auth,
+			      enum notify_payload_hash_algorithms hash_algo)
+{
+	size_t signed_len;
+	const struct connection *c = st->st_connection;
+	const struct ECDSA_private_key *k = get_ECDSA_private_key(c);
+	unsigned int sz;
+	unsigned int hash_digest_size;
+	libreswan_log("ikev2_calculate_rsa_hash get_ECDSA_private_key");
+	switch (hash_algo) {
+	case IKEv2_AUTH_HASH_SHA1:
+		hash_digest_size = SHA1_DIGEST_SIZE + RSA_SHA1_SIGNED_OCTETS;
+		break;
+	case IKEv2_AUTH_HASH_SHA2_256:
+		hash_digest_size = SHA2_256_DIGEST_SIZE;
+		break;
+	case IKEv2_AUTH_HASH_SHA2_384:
+		hash_digest_size = SHA2_384_DIGEST_SIZE;
+		break;
+	case IKEv2_AUTH_HASH_SHA2_512:
+		hash_digest_size = SHA2_512_DIGEST_SIZE;
+		break;
+	default:
+	bad_case(hash_algo);
+	}
+
+	unsigned char *signed_octets = alloc_bytes(hash_digest_size, "signed octets size");
+
+	if (k == NULL)
+		return FALSE; /* failure: no key to use */
+
+	sz = k->pub.k;
+
+	ikev2_calculate_sighash(st, role, idhash,
+				st->st_firstpacket_me,
+				signed_octets, hash_algo);
+
+	switch (hash_algo) {
+	case IKEv2_AUTH_HASH_SHA2_256:
+		signed_len = SHA2_256_DIGEST_SIZE;
+		break;
+	case IKEv2_AUTH_HASH_SHA2_384:
+		signed_len = SHA2_384_DIGEST_SIZE;
+		break;
+	case IKEv2_AUTH_HASH_SHA2_512:
+		signed_len = SHA2_512_DIGEST_SIZE;
+		break;
+	default:
+	bad_case(hash_algo);
+	}
+
+	    DBG_dump("v2ecdsa octets", signed_octets, signed_len);
+
+	{
+		/* now generate signature blob */
+		u_char sig_val[SHA2_384_DIGEST_SIZE];
+		int shr;
+
+		shr = sign_hash_ECDSA(k, signed_octets, signed_len, sig_val, sz, TRUE, hash_algo);
+		if (shr == 0)
+			return FALSE;
+		passert(shr == (int)sz);
+		if (calc_no_ppk_auth == FALSE) {
+			if (!out_raw(sig_val, sz, a_pbs, "ecdsa signature"))
+				return FALSE;
+		} else {
+			clonetochunk(*no_ppk_auth, sig_val, sz, "NO_PPK_AUTH chunk");
+			DBG(DBG_PRIVATE, DBG_dump_chunk("NO_PPK_AUTH payload", *no_ppk_auth));
+		}
+	}
+
+	pfree(signed_octets);
+
+	return TRUE;
+}
+
+#if 0
+static err_t try_RSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  size_t hash_len,
 				  const pb_stream *sig_pbs, struct pubkey *kr,
 				  struct state *st, bool version UNUSED,
@@ -241,10 +333,10 @@ bool ikev2_calculate_rsa_hash(struct state *st,
 	const struct RSA_public_key *k = &kr->u.rsa;
 
 	if (k == NULL)
-		return "1" "no key available"; *//* failure: no key to use */
+		return "1" "no key available"; /* failure: no key to use */
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
-/*	if (sig_len != k->k)
+	if (sig_len != k->k)
 		return "1" "SIG length does not match public key length";
 
 	err_t ugh = RSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
@@ -256,7 +348,8 @@ bool ikev2_calculate_rsa_hash(struct state *st,
 	st->st_peer_pubkey = reference_key(kr);
 
 	return NULL;
-}*/
+}
+#endif
 
 static err_t try_ECDSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  size_t hash_len,
@@ -265,21 +358,29 @@ static err_t try_ECDSA_signature_v2(const u_char hash_val[MAX_DIGEST_LEN],
 				  enum notify_payload_hash_algorithms hash_algo UNUSED)
 {
 	libreswan_log("try_ECDSA_signature_v2");
-	const u_char *sig_val = sig_pbs->cur;
+	//const u_char *sig_val = sig_pbs->cur;
+	u_char *sig_val = sig_pbs->cur;
 	size_t sig_len = pbs_left(sig_pbs);
 	const struct ECDSA_public_key *k = &kr->u.ecdsa;
 	libreswan_log("sig_length is %zu",sig_len);
 	libreswan_log("key_length is %d",k->k);
+	chunk_t sig_val_chunk;
+	sig_val_chunk.ptr = sig_val;
+	sig_val_chunk.len = sig_len;
+	chunk_t sig_val_der_decoded;
+	is_asn1_der_encoded_signature(sig_val_chunk, &sig_val_der_decoded);
 
 	if (k == NULL)
 		return "1" "no key available"; /* failure: no key to use */
 
 	/* decrypt the signature -- reversing RSA_sign_hash */
-//	if (sig_len != k->k)
-//		return "1" "SIG length does not match public key length";
+/*	if (sig_len != k->k)
+		return "1" "SIG length does not match public key length";*/
 	DBG_dump("sig_val",sig_val,sig_len);
-	err_t ugh = ECDSA_signature_verify_nss(k, hash_val, hash_len, sig_val,
-					     sig_len, TRUE, hash_algo);
+	DBG_dump("sig_val_new",sig_val_der_decoded.ptr,sig_val_der_decoded.len);
+	
+	err_t ugh = ECDSA_signature_verify_nss(k, hash_val, hash_len, sig_val_der_decoded.ptr,
+					     sig_val_der_decoded.len, TRUE, hash_algo);
 	if (ugh != NULL)
 		return ugh;
 

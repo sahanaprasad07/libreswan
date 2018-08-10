@@ -73,7 +73,7 @@ def create_keypair(algo=crypto.TYPE_RSA, bits=1024):
 
 def create_csr(pkey, CN,
 			   C=None, ST=None, L=None, O=None, OU=None,
-			   emailAddress=None, algo='sha256'):
+			   emailAddress=None, algo='sha1'):
 	""" Create the certreq
 	"""
 	req = crypto.X509Req()
@@ -154,7 +154,7 @@ def create_sub_cert(CN, CACert, CAkey, snum, START, END,
 					O='Libreswan', OU='Test Department',
 					emailAddress='',
 					ty=crypto.TYPE_RSA, keybits=1024,
-					sign_alg='sha256', isCA=False, ocsp=False):
+					sign_alg='sha1', isCA=False, ocsp=False):
 	""" Create a subordinate cert and return the cert, key tuple
     This could be a CA for an intermediate, or not for an EE
 	"""
@@ -188,7 +188,7 @@ def create_root_ca(CN, START, END,
 				   O='Libreswan', OU='Test Department',
 				   emailAddress='testing@libreswan.org',
 				   ty=crypto.TYPE_RSA, keybits=1024,
-				   sign_alg='sha256'):
+				   sign_alg='sha1'):
 	""" Create a root CA - Returns the cert, key tuple
 	"""
 	cakey = create_keypair(ty, keybits)
@@ -340,9 +340,9 @@ def create_mainca_end_certs(mainca_end_certs):
 			common_name = name + '.testing.libreswan.org'
 
 		if name == 'hashsha2':
-			alg = 'sha256'
+			alg = 'sha1'
 		else:
-			alg = 'sha256'
+			alg = 'sha1'
 
 		if " " in common_name:
 			emailAddress = "root@testing.libreswan.org"
@@ -450,9 +450,9 @@ def create_leading_zero_crl():
 		nl = ''
 
 		crl = zerosig.export(signcert, signkey,
-							 type=crypto.FILETYPE_TEXT, days=days, digest='sha256')
+							 type=crypto.FILETYPE_TEXT, days=days, digest='sha1')
 		der = zerosig.export(signcert, signkey,
-							 type=crypto.FILETYPE_ASN1, days=days, digest='sha256')
+							 type=crypto.FILETYPE_ASN1, days=days, digest='sha1')
 
 		for index, line in enumerate(crl.splitlines()):
 			if "Signature Algorithm" in line and index >= 5:
@@ -500,7 +500,7 @@ def create_crlsets():
 		f.write(needupdate.export(ca_certs['mainca'][0],
 								  ca_certs['mainca'][1],
 								  type=crypto.FILETYPE_ASN1,
-								  days=0, digest='sha256'))
+								  days=0, digest='sha1'))
 
 	print "sleeping for needupdate/valid crl time difference"
 	time.sleep(5)
@@ -511,7 +511,7 @@ def create_crlsets():
 		f.write(validcrl.export(ca_certs['mainca'][0],
 								ca_certs['mainca'][1],
 								type=crypto.FILETYPE_ASN1,
-								days=15, digest='sha256'))
+								days=15, digest='sha1'))
 
 	othercrl = crypto.CRL()
 	othercrl.add_revoked(revoked)
@@ -520,7 +520,7 @@ def create_crlsets():
 		f.write(othercrl.export(ca_certs['otherca'][0],
 								ca_certs['otherca'][1],
 								type=crypto.FILETYPE_ASN1,
-								days=15, digest='sha256'))
+								days=15, digest='sha1'))
 
 	notyet = crypto.CRL()
 	notyet.add_revoked(future_revoked)
@@ -528,7 +528,7 @@ def create_crlsets():
 		f.write(notyet.export(ca_certs['mainca'][0],
 							  ca_certs['mainca'][1],
 							  type=crypto.FILETYPE_ASN1,
-							  days=15, digest='sha256'))
+							  days=15, digest='sha1'))
 
 	 #create_leading_zero_crl()
 

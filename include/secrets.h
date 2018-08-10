@@ -85,13 +85,18 @@ struct ECDSA_public_key {
 	char keyid[KEYID_BUF];
 	unsigned int k;
 	chunk_t ecParams;
-	chunk_t pub;
+	chunk_t pub; /* publicValue */
 	ckaid_t ckaid;
 
 };
 
 struct ECDSA_private_key {
-    struct ECDSA_public_key pub;
+	struct ECDSA_public_key pub;
+	chunk_t ecParams;
+	chunk_t pub_val; /* publicValue */
+	chunk_t privateValue;
+	chunk_t version;
+	
 };
 
 extern void free_RSA_public_content(struct RSA_public_key *rsa);
