@@ -102,9 +102,6 @@ static void ikev2_calc_dcookie(u_char *dcookie, chunk_t st_ni,
 static stf_status ikev2_parent_outI1_common(struct msg_digest *md,
 					    struct state *st);
 
-static bool asn1_hash_in(const struct asn1_hash_blob *asn1_hash_blob, pb_stream *a_pbs,
-		   uint8_t size, uint8_t asn1_blob_len);
-
 static bool ikev2_out_hash_v2n(u_int8_t np, pb_stream *rbody, lset_t sighash_policy)
 {
 	u_int16_t hash_algo_to_send[SUPPORTED_NUM_HASH];
@@ -215,61 +212,37 @@ static stf_status ikev2_send_asn1_hash_blob(enum notify_payload_hash_algorithms 
 static stf_status ikev2_check_asn1_hash_blob(enum notify_payload_hash_algorithms hash_algo, pb_stream *a_pbs)
 {
 	const struct asn1_hash_blob *b = blob_for_hash_algo(hash_algo);
+	uint8_t check_size[ASN1_LEN_ALGO_IDENTIFIER];
+	uint8_t *check_blob = alloc_bytes(b->asn1_blob_len, "ASN.1 blob");
 
 	if (b == NULL) {
 		loglog(RC_LOG_SERIOUS, "Non-negotiable Hash algorithm %d received", hash_algo);
 		return STF_FAIL;
 	}
 
-	/*
-	 * ???
-	 * b->size == ASN1_LEN_ALGO_IDENTIFIER; b->asn1_blob_len == ASN1_SHA2_RSA_PSS_SIZE
-	 * Why pass these separately to asn1_hash_in?
-	 * If these are universal, they could be wired into asn1_hash_in thus avoiding
-	 * an array bound that isn't a compile-time constant.
-	 * This is the only call to asn1_hash_in: why not inline it?
-	 */
-	if (!asn1_hash_in(b, a_pbs, ASN1_LEN_ALGO_IDENTIFIER, ASN1_SHA2_RSA_PSS_SIZE)) {
+	if (!in_raw(check_size, ASN1_LEN_ALGO_IDENTIFIER, a_pbs,
+	    "Algorithm Identifier length"))
+		return STF_FAIL;
+
+	if (!memeq(check_size, b->size_blob, ASN1_LEN_ALGO_IDENTIFIER)) {
+		loglog(RC_LOG_SERIOUS, " Received incorrect size of ASN.1 Algorithm Identifier");
 		return STF_FAIL;
 	}
 
+	if (!in_raw(check_blob, b->asn1_blob_len, a_pbs,
+	    "Algorithm Identifier value"))
+		return STF_FAIL;
+
+	if (!memeq(check_blob, b->asn1_blob, b->asn1_blob_len)) {
+		loglog(RC_LOG_SERIOUS, " Received incorrect bytes of ASN.1 Algorithm Identifier");
+		return STF_FAIL;
+	}
+
+	pfree(check_blob);
 	return STF_OK;
 }
 
-static bool asn1_hash_in(const struct asn1_hash_blob *asn1_hash_blob, pb_stream *a_pbs,
-		   uint8_t size, uint8_t asn1_blob_len)
-{
-	/* ??? dynamic array bounds are deprecated */
-	uint8_t check_size[size];
-	/* ??? dynamic array bounds are deprecated */
-	uint8_t check_blob[asn1_blob_len];
 
-	if (!in_raw(check_size, size, a_pbs,
-	    "Algorithm Identifier length"))
-		return FALSE;
-	/*
-	 * ??? The following seems to assume asn1_hash_blob->size == size
-	 * This is true, but not self-evident.
-	 */
-	if (!memeq(check_size, asn1_hash_blob->size_blob, asn1_hash_blob->size)) {
-		loglog(RC_LOG_SERIOUS, " Received incorrect size of ASN.1 Algorithm Identifier");
-		return FALSE;
-	}
-
-	if (!in_raw(check_blob, asn1_blob_len, a_pbs,
-	    "Algorithm Identifier value"))
-		return FALSE;
-	/*
-	 * ??? The following seems to assume asn1_hash_blob->asn1_blob_len == asn1_blob_len
-	 * This is true, but not self-evident.
-	 */
-	if (!memeq(check_blob, asn1_hash_blob->asn1_blob, asn1_hash_blob->asn1_blob_len)) {
-		loglog(RC_LOG_SERIOUS, " Received incorrect bytes of ASN.1 Algorithm Identifier");
-		return FALSE;
-	}
-
-	return TRUE;
-}
 
 void ikev2_ike_sa_established(struct ike_sa *ike,
 			      const struct state_v2_microcode *svm,
