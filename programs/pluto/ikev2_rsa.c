@@ -306,9 +306,9 @@ bool ikev2_calculate_ecdsa_hash(struct state *st,
 		shr = sign_hash_ECDSA(k, signed_octets, signed_len, sig_val, sz, TRUE, hash_algo);
 		if (shr == 0)
 			return FALSE;
-		passert(shr == (int)sz);
+		//passert(shr == (int)sz);
 		if (calc_no_ppk_auth == FALSE) {
-			if (!out_raw(sig_val, sz, a_pbs, "ecdsa signature"))
+			if (!out_raw(sig_val, shr, a_pbs, "ecdsa signature"))
 				return FALSE;
 		} else {
 			clonetochunk(*no_ppk_auth, sig_val, sz, "NO_PPK_AUTH chunk");

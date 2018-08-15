@@ -338,7 +338,7 @@ USE_DNSSEC?=true
 # For systemd start/stop notifications and watchdog feature
 # We only enable this by default if used INITSYSTEM is systemd
 ifeq ($(INITSYSTEM),systemd)
-USE_SYSTEMD_WATCHDOG?=true
+USE_SYSTEMD_WATCHDOG?=false
 SD_RESTART_TYPE?="always"
 SD_PLUTO_OPTIONS?="--leak-detective"
 else

@@ -301,23 +301,26 @@ int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 
 	DBG_dump("nss", k->pub.ckaid.nss->data, k->pub.ckaid.nss->len);
 
-	//privateKey = PK11_FindKeyByKeyID(slot, k->pub.ckaid.nss,
-	//				 lsw_return_nss_password_file_info());
+	privateKey = PK11_FindKeyByKeyID(slot, k->pub.ckaid.nss,
+					 lsw_return_nss_password_file_info());
+#if 0
 	CERTCertificate *cert = get_cert_by_ckaid_t_from_nss(k->pub.ckaid);
+
 	LSWDBGP(DBG_MASK, buf) {
 		lswlogf(buf, "got cert form ckaid");
 		lswlog_nss_error(buf);
 	}
+
 	privateKey = PK11_FindKeyByAnyCert(cert, lsw_return_nss_password_file_info());
 	libreswan_log("keyType %d",privateKey->keyType);
-	LSWDBGP(DBG_MASK, buf) {
-		lswlogf(buf, "got priv ket from cert");
-		lswlog_nss_error(buf);
-	}
+#endif
 
 	if (privateKey == NULL) {
-		DBG(DBG_CRYPT,
-		    DBG_log("NSS: Can't find the private key from the NSS CKA_ID"));
+		LSWDBGP(DBG_CRYPT, buf) {
+		        lswlogf(buf, "NSS: Can't find the private key from the NSS CKA_ID");
+			lswlog_nss_error(buf);
+		}
+
 		CERTCertificate *cert = get_cert_by_ckaid_t_from_nss(k->pub.ckaid);
 		if (cert == NULL) {
 			loglog(RC_LOG_SERIOUS, "Can't find the certificate or private key from the NSS CKA_ID");
@@ -356,11 +359,12 @@ int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 	}
 	//signature.data = alloc_bytes(signature.len, "signature data:");
 	
-			SECStatus s = PK11_Sign(privateKey, &signature, &data);
-	LSWDBGP(DBG_MASK, buf) {
-		lswlogf(buf, "failed to find private key?");
-		lswlog_nss_error(buf);
-	}
+	SECStatus s = PK11_Sign(privateKey, &signature, &data);
+	if (s != SECSuccess) {
+		LSWDBGP(DBG_MASK, buf) {
+			lswlogf(buf, "failed to find private key?");
+			lswlog_nss_error(buf);
+		}
 			//SECStatus s = ECDSA_SignDigest(privateKey, &signature, &data);
 
 			if (s != SECSuccess) {
@@ -370,7 +374,7 @@ int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 					PR_GetError());
 				return 0;
 			}
-
+	}
 	SECKEY_DestroyPrivateKey(privateKey);
 
 	DBG(DBG_CRYPT, DBG_log("ECDSA_sign_hash: Ended using NSS"));
