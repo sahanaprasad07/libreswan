@@ -300,20 +300,36 @@ bool ikev2_calculate_ecdsa_hash(struct state *st,
 
 	{
 		/* now generate signature blob */
-		u_char sig_val[SHA2_384_DIGEST_SIZE];
+		u_char sig_val[96];
 		int shr;
 
 		shr = sign_hash_ECDSA(k, signed_octets, signed_len, sig_val, sz, TRUE, hash_algo);
 		if (shr == 0)
 			return FALSE;
 		//passert(shr == (int)sz);
+	#if 1
+		u_char *der_encoded_sig_val = alloc_bytes(shr+6, "der encoded signature");
+
+		der_encoded_sig_val[0] = ASN1_SEQUENCE;
+		der_encoded_sig_val[1] = shr+4;
+		der_encoded_sig_val[2] = 0x02;
+		der_encoded_sig_val[3] = shr/2;
+		memcpy(der_encoded_sig_val+4,sig_val,shr/2);
+		der_encoded_sig_val[shr/2+4]=0x02;
+		der_encoded_sig_val[shr/2+5]=shr/2;
+		memcpy(der_encoded_sig_val+6+(shr/2),sig_val+(shr/2),shr/2);
+	#endif
+
 		if (calc_no_ppk_auth == FALSE) {
-			if (!out_raw(sig_val, shr, a_pbs, "ecdsa signature"))
+			if (!out_raw(der_encoded_sig_val, shr+6, a_pbs, "ecdsa signature"))
+		//	if (!out_raw(sig_val, shr, a_pbs, "ecdsa signature"))
 				return FALSE;
 		} else {
 			clonetochunk(*no_ppk_auth, sig_val, sz, "NO_PPK_AUTH chunk");
 			DBG(DBG_PRIVATE, DBG_dump_chunk("NO_PPK_AUTH payload", *no_ppk_auth));
 		}
+		
+		pfree(der_encoded_sig_val);
 	}
 
 	pfree(signed_octets);

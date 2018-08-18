@@ -271,7 +271,7 @@ int sign_hash(const struct RSA_private_key *k,
 
 int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 		  const u_char *hash_val, size_t hash_len,
-		  u_char *sig_val UNUSED, size_t sig_len UNUSED, bool version UNUSED,
+		  u_char *sig_val UNUSED , size_t sig_len UNUSED, bool version UNUSED,
 		  enum notify_payload_hash_algorithms hash_algo UNUSED)
 {
 	SECKEYPrivateKey *privateKey = NULL;
@@ -301,9 +301,9 @@ int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 
 	DBG_dump("nss", k->pub.ckaid.nss->data, k->pub.ckaid.nss->len);
 
-	privateKey = PK11_FindKeyByKeyID(slot, k->pub.ckaid.nss,
-					 lsw_return_nss_password_file_info());
-#if 0
+//	privateKey = PK11_FindKeyByKeyID(slot, k->pub.ckaid.nss,
+//					 lsw_return_nss_password_file_info());
+#if 1
 	CERTCertificate *cert = get_cert_by_ckaid_t_from_nss(k->pub.ckaid);
 
 	LSWDBGP(DBG_MASK, buf) {
@@ -347,9 +347,9 @@ int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 	signature.type = siBuffer;
 	signature.len = PK11_SignatureLen(privateKey);
 	libreswan_log("signature.len %d",signature.len);
-	u_char val[96] = {0};	
+//	u_char val[96] = {0};	
 //	signature.data = (unsigned char *)PORT_Alloc(signature.len);
-	signature.data = val;
+	signature.data = sig_val;
 
 	DBG_dump("sig", signature.data, signature.len);
 	DBG_dump("data", data.data, data.len);
@@ -360,6 +360,7 @@ int sign_hash_ECDSA(const struct ECDSA_private_key *k,
 	//signature.data = alloc_bytes(signature.len, "signature data:");
 	
 	SECStatus s = PK11_Sign(privateKey, &signature, &data);
+	DBG_dump("sig_from_nss", signature.data, signature.len);
 	if (s != SECSuccess) {
 		LSWDBGP(DBG_MASK, buf) {
 			lswlogf(buf, "failed to find private key?");
