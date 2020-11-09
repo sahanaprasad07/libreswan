@@ -190,6 +190,7 @@ struct end {
 		} host;
 	} raw;
 
+	char *sec_label;
 	bool key_from_DNS_on_demand;
 	bool has_client;
 	bool has_id_wildcards;

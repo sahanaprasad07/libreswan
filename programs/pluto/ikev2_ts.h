@@ -33,6 +33,7 @@ struct traffic_selector {
 	uint16_t startport;
 	uint16_t endport;
 	ip_range net;	/* for now, always happens to be a CIDR */
+	char *sec_label; /* secutiy label for labeled ipsec */
 };
 
 void ikev2_print_ts(const struct traffic_selector *ts);

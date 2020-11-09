@@ -75,6 +75,7 @@ void ikev2_print_ts(const struct traffic_selector *ts)
 		DBG_log("  port range: %d-%d", ts->startport, ts->endport);
 		range_buf b;
 		DBG_log("  ip range: %s", str_range(&ts->net, &b));
+		DBG_log("  sec_ctx_value: %s", (ts->sec_label ? ts->sec_label : "<NULL>"));
 	}
 }
 
@@ -112,6 +113,9 @@ struct traffic_selector ikev2_end_to_ts(const struct end *e)
 		ts.startport = e->port;
 		ts.endport = e->port;
 	}
+	
+	/* set security label */
+	ts.sec_label = e->sec_label;
 
 	return ts;
 }

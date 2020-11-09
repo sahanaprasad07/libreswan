@@ -1797,7 +1797,8 @@ static bool setup_half_ipsec_sa(struct state *st, bool inbound)
 		.transport_proto = c->spd.this.protocol,
 		.sa_lifetime = c->sa_ipsec_life_seconds,
 		.outif = -1,
-		.sec_ctx = st->sec_ctx,
+		.sec_ctx = st->sec_ctx, /* for ikev1 only */
+		.sec_label = c->spd.this.sec_label,
 	};
 
 	inner_spi = SPI_PASS;

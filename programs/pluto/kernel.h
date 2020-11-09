@@ -122,6 +122,11 @@ struct kernel_end {
 	 * embedded in the address (making it an endpoint)
 	 */
 	const ip_address *new_address;
+	/*
+	 * This is the security label used for
+	 * labeled ipsec.
+	 */
+	const char *ikev2_sec_label;
 };
 
 struct kernel_sa {
@@ -169,7 +174,8 @@ struct kernel_sa {
 	const struct ip_encap *encap_type;		/* ESP in TCP or UDP; or NULL */
 	ip_address *natt_oa;
 	const char *text_said;
-	struct xfrm_user_sec_ctx_ike *sec_ctx;
+	struct xfrm_user_sec_ctx_ike *sec_ctx; /* for ikev1 only */
+	const char *sec_label;
 	const char *nic_offload_dev;
 	uint32_t xfrm_if_id;
 	struct sa_mark mark_set; /* config keyword mark-out */

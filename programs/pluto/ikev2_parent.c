@@ -564,9 +564,14 @@ void ikev2_parent_outI1(struct fd *whack_sock,
 
 	if (HAS_IPSEC_POLICY(policy)) {
 		st->sec_ctx = NULL;
-		if (uctx != NULL)
-			log_state(RC_LOG, &ike->sa,
-				  "Labeled ipsec is not supported with ikev2 yet");
+		if (uctx != NULL) {
+			dbg("%s: set security label to \"%s\"", __FUNCTION__, *(&c->spd.this.sec_label));
+			st->st_ts_this = ikev2_end_to_ts(&c->spd.this);
+			st->st_ts_that = ikev2_end_to_ts(&c->spd.that);
+			ikev2_print_ts(&st->st_ts_this);
+			ikev2_print_ts(&st->st_ts_that);
+
+		}
 		add_pending(whack_sock, ike, c, policy, 1,
 			    predecessor == NULL ? SOS_NOBODY : predecessor->st_serialno,
 			    st->sec_ctx,
@@ -2383,7 +2388,10 @@ static stf_status ikev2_parent_inR1outI2_auth_signature_continue(struct ike_sa *
 	cst->st_ts_this = ikev2_end_to_ts(&cc->spd.this);
 	cst->st_ts_that = ikev2_end_to_ts(&cc->spd.that);
 
-	v2_emit_ts_payloads(pexpect_child_sa(cst), &sk.pbs, cc);
+	stf_status const emit_ret = v2_emit_ts_payloads(pexpect_child_sa(cst), &sk.pbs, cc);
+	if (emit_ret != STF_OK) {
+		return STF_INTERNAL_ERROR;
+	}
 
 	if ((cc->policy & POLICY_TUNNEL) == LEMPTY) {
 		dbg("Initiator child policy is transport mode, sending v2N_USE_TRANSPORT_MODE");
@@ -5964,6 +5972,11 @@ void ikev2_initiate_child_sa(struct pending *p)
 		child->sa.sec_ctx = clone_thing(*p->uctx, "sec ctx structure");
 		dbg("pending phase 2 with security context \"%s\"",
 		    child->sa.sec_ctx->sec_ctx_value);
+
+		child->sa.st_ts_this = ikev2_end_to_ts(&c->spd.this);
+		child->sa.st_ts_that = ikev2_end_to_ts(&c->spd.that);
+		ikev2_print_ts(&child->sa.st_ts_this);
+		ikev2_print_ts(&child->sa.st_ts_that);
 	}
 
 	binlog_refresh_state(&child->sa);
