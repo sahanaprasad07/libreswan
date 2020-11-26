@@ -1084,9 +1084,31 @@ struct ikev2_ts1 {
 	uint16_t isat1_startport;
 	uint16_t isat1_endport;
 };
+
+/**
+ * ikev2_ts_seclabel: Header of a TS_SECLABEL substructure in a Traffic
+ * Selector (TS) Payload.
+ */
+struct ikev2_ts_seclabel {
+	/**
+	 * `isa_tssec_type` is the Traffic Selector Type.
+	 */
+	uint8_t isa_tssec_type;
+
+	/**
+	 * Reserved; unused
+	 */
+	uint8_t isa_tssec_reserved;
+
+	/* `isa_tssec_sellen` is the Traffic Selector substructure length
+	 * _including_ the header
+	 */
+	uint16_t isa_tssec_sellen;
+};
 extern struct_desc ikev2_ts_i_desc;
 extern struct_desc ikev2_ts_r_desc;
 extern struct_desc ikev2_ts1_desc;
+extern struct_desc ikev2_ts_seclabel_desc;
 
 /* rfc4306, section 3.14, encrypted payload, uses generic header */
 extern struct_desc ikev2_sk_desc;

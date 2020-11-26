@@ -129,12 +129,55 @@ static stf_status ikev2_emit_ts(pb_stream *outpbs,
 	{
 		struct ikev2_ts its = {
 			.isat_critical = ISAKMP_PAYLOAD_NONCRITICAL,
-			.isat_num = 1,
+			/*
+			 * If there is a security label in the Traffic Selector,
+			 * then we must send a TS_SECLABEL substructure as part of the
+			 * Traffic Selector (TS) Payload.
+			 * That means the TS Payload contains two TS substructures:
+			 *  - One for the address/port range
+			 *  - One for the TS_SECLABEL
+			 */
+			.isat_num = ts->sec_label ? 2 : 1,
 		};
 
 		if (!out_struct(&its, ts_desc, outpbs, &ts_pbs))
 			return STF_INTERNAL_ERROR;
 	}
+
+	/*
+	 * Output a TS_SECLABEL substructure as part of the TS Payload if a
+	 * security label exists.
+	 */
+	if (ts->sec_label) {
+		if (strlen(ts->sec_label) == 0) {
+			/* Zero-length security labels not allowed by the labeled IPsec RFC. */
+			loglog(RC_LOG_SERIOUS, "ERROR: Trying to output a zero length security label");
+			return STF_INTERNAL_ERROR;
+		}
+
+		/* Initialize the header of the TS_SECLABEL substructure payload. */
+		struct ikev2_ts_seclabel ts_seclabel;
+		ts_seclabel.isa_tssec_type = IKEv2_TS_SECLABEL;
+		ts_seclabel.isa_tssec_reserved = 0;
+		/* Length of the TS_SECLABEL substructure = 4 (size of header) + security label length */
+		ts_seclabel.isa_tssec_sellen = 4 + strlen(ts->sec_label) + 1; /*include NULL termination*/
+
+		/* Output the header of the TS_SECLABEL substructure payload. */
+		if (!out_struct(&ts_seclabel, &ikev2_ts_seclabel_desc, &ts_pbs, NULL)) {
+			loglog(RC_LOG_SERIOUS, "ERROR: Could not output TS_SECLABEL header. Security label = %s", ts->sec_label);
+			return STF_INTERNAL_ERROR;
+		}
+		
+		/* Output the security label value of the TS_SECLABEL substructure payload. */
+		diag_t label_out_error =
+			pbs_out_raw(&ts_pbs, ts->sec_label, strlen(ts->sec_label) + 1, "Security label value");
+		if (label_out_error != NULL) {
+			loglog(RC_LOG_SERIOUS, "ERROR: Could not output TS_SECLABEL security label value. Security label = %s", ts->sec_label);
+			log_diag(RC_LOG_SERIOUS, outpbs->out_logger, &label_out_error, "%s", "");
+			return STF_INTERNAL_ERROR;
+		}
+	}
+
 
 	pb_stream ts_pbs2;
 
@@ -220,6 +263,8 @@ static struct traffic_selector impair_ts_to_supernet(const struct traffic_select
 		ts_ret.net = range_from_subnet(&ipv6_info.all_addresses);
 
 	ts_ret.net.is_subnet = true;
+
+	ts_ret.sec_label = ts->sec_label;
 
 	return ts_ret;
 }

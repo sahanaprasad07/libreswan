@@ -1445,6 +1445,50 @@ struct_desc ikev2_ts1_desc = {
 };
 
 /*
+ * 2.1.  TS_SECLABEL payload format
+ *
+ *                         1                   2                   3
+ *     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ *    +---------------+---------------+-------------------------------+
+ *    |   TS Type     |    Reserved   |       Selector Length         |
+ *    +---------------+---------------+-------------------------------+
+ *    |                                                               |
+ *    ~                         Security Label*                       ~
+ *    |                                                               |
+ *    +---------------------------------------------------------------+
+ *
+ *                Figure 1: Labeled IPsec Traffic Selector
+*/
+static field_desc ikev2_ts_seclabel_fields[] = {
+	{ ft_enum, 8 / BITS_PER_BYTE, "TS type", &ikev2_ts_type_names },
+	{ ft_zig, 8 / BITS_PER_BYTE, "reserved", NULL },
+
+	/*
+	 * "Selector Length" is NOT a `ft_len` because:
+	 *
+	 *  - We don't want the packet byte stream pointer to skip to the end
+	 *    beyond the "Security Label" during input parsing of a
+	 *    `ikev2_ts_seclabel` struct.
+	 *    - NOTE: The `ikev2_ts_seclabel` struct does NOT include the
+	 *      "Security Label" field since its size is variable.
+	 *
+	 *  - After input parsing an `ikev2_ts_seclabel` struct, we do a raw
+	 *    input parse for the "Security Label" based on the
+	 *    "Selector Length" value.
+	 */
+	{ ft_nat, 16 / BITS_PER_BYTE, "length", NULL },
+
+	{ ft_end,  0, NULL, NULL }
+};
+struct_desc ikev2_ts_seclabel_desc = {
+	.name = "IKEv2 TS_SECLABEL Traffic Selector",
+	.fields = ikev2_ts_seclabel_fields,
+	.size = sizeof(struct ikev2_ts_seclabel),
+};
+
+uint16_t const ikev2_ts_seclabel_header_len = 4;
+
+/*
  * 3.14.  Encrypted Payload
  *                         1                   2                   3
  *    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
