@@ -14,7 +14,7 @@ start_strongswan()
 {
     /usr/sbin/strongswan start > /dev/null 2>&1
     seconds=0
-    while test ${seconds} -lt 10 ; do
+    while test ${seconds} -lt 30 ; do
 	status=$(strongswan status)
 	case "${status}" in
 	    *"Security Associations"* )
@@ -46,7 +46,7 @@ start_charon()
 	if swanctl --stats > /dev/null 2>&1 ; then
 	    break
 	fi
-	if test ${seconds} -ge 10 ; then
+	if test ${seconds} -ge 30 ; then
 	    echo charon-system did not start after ${seconds} seconds >/dev/stderr
 	    exit 1
 	fi

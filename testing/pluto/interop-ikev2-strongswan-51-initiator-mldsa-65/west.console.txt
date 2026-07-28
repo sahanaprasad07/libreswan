@@ -1,0 +1,150 @@
+/testing/guestbin/swan-prep --userland strongswan
+west #
+ cp /testing/x509/pki/real/mainmldsa65/root.cert /etc/strongswan/ipsec.d/cacerts/mainmldsa65.crt
+west #
+ cp /testing/x509/pki/real/mainmldsa65/west.end.cert /etc/strongswan/ipsec.d/certs/west.crt
+west #
+ cp /testing/x509/pki/real/mainmldsa65/west.key /etc/strongswan/ipsec.d/private/west.key
+west #
+ chmod 600 /etc/strongswan/ipsec.d/private/*
+west #
+ ../../guestbin/strongswan-start.sh
+west #
+ echo "initdone"
+initdone
+west #
+ strongswan up westnet-eastnet-ikev2
+initiating IKE_SA westnet-eastnet-ikev2[1] to 192.1.2.23
+generating IKE_SA_INIT request 0 [ SA KE No N(NATD_S_IP) N(NATD_D_IP) N(FRAG_SUP) N(HASH_ALG) N(REDIR_SUP) ]
+sending packet: from 192.1.2.45[500] to 192.1.2.23[500] (XXX bytes)
+received packet: from 192.1.2.23[500] to 192.1.2.45[500] (XXX bytes)
+parsed IKE_SA_INIT response 0 [ SA KE No N(FRAG_SUP) N(HASH_ALG) N(NATD_S_IP) N(NATD_D_IP) N(CHDLESS_SUP) CERTREQ ]
+selected proposal: IKE:AES_GCM_16_256/PRF_HMAC_SHA2_512/ECP_256
+sending cert request for "C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=Libreswan test CA for mainmldsa65, E=testing@libreswan.org"
+authentication of 'C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=west.testing.libreswan.org, E=user-west@testing.libreswan.org' (myself) with ML_DSA_65 successful
+sending end entity cert "C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=west.testing.libreswan.org, E=user-west@testing.libreswan.org"
+establishing CHILD_SA westnet-eastnet-ikev2{1}
+generating IKE_AUTH request 1 [ IDi CERT N(INIT_CONTACT) CERTREQ IDr AUTH SA TSi TSr N(MOBIKE_SUP) N(ADD_4_ADDR) N(EAP_ONLY) N(MSG_ID_SYN_SUP) ]
+splitting IKE message (XXX bytes) into 9 fragments
+generating IKE_AUTH request 1 [ EF(1/9) ]
+generating IKE_AUTH request 1 [ EF(2/9) ]
+generating IKE_AUTH request 1 [ EF(3/9) ]
+generating IKE_AUTH request 1 [ EF(4/9) ]
+generating IKE_AUTH request 1 [ EF(5/9) ]
+generating IKE_AUTH request 1 [ EF(6/9) ]
+generating IKE_AUTH request 1 [ EF(7/9) ]
+generating IKE_AUTH request 1 [ EF(8/9) ]
+generating IKE_AUTH request 1 [ EF(9/9) ]
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+sending packet: from 192.1.2.45[4500] to 192.1.2.23[4500] (XXX bytes)
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(1/21) ]
+received fragment #1 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(2/21) ]
+received fragment #2 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(6/21) ]
+received fragment #6 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(8/21) ]
+received fragment #8 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(5/21) ]
+received fragment #5 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(12/21) ]
+received fragment #12 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(7/21) ]
+received fragment #7 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(4/21) ]
+received fragment #4 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(9/21) ]
+received fragment #9 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(10/21) ]
+received fragment #10 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(21/21) ]
+received fragment #21 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(3/21) ]
+received fragment #3 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(13/21) ]
+received fragment #13 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(14/21) ]
+received fragment #14 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(15/21) ]
+received fragment #15 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(16/21) ]
+received fragment #16 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(17/21) ]
+received fragment #17 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(18/21) ]
+received fragment #18 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(19/21) ]
+received fragment #19 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(20/21) ]
+received fragment #20 of 21, waiting for complete IKE message
+received packet: from 192.1.2.23[4500] to 192.1.2.45[4500] (XXX bytes)
+parsed IKE_AUTH response 1 [ EF(11/21) ]
+received fragment #11 of 21, reassembled fragmented IKE message (XXX bytes)
+parsed IKE_AUTH response 1 [ IDr CERT AUTH SA TSi TSr ]
+received end entity cert "C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=east.testing.libreswan.org, E=user-east@testing.libreswan.org"
+  using certificate "C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=east.testing.libreswan.org, E=user-east@testing.libreswan.org"
+  using trusted ca certificate "C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=Libreswan test CA for mainmldsa65, E=testing@libreswan.org"
+  reached self-signed root ca with a path length of 0
+checking certificate status of "C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=east.testing.libreswan.org, E=user-east@testing.libreswan.org"
+  requesting ocsp status from 'http://nic.testing.libreswan.org:2560' ...
+libcurl request failed [7]: Failed to connect to nic.testing.libreswan.org XXX
+ocsp request to http://nic.testing.libreswan.org:2560 failed
+ocsp check failed, fallback to crl
+  fetching crl from 'http://nic.testing.libreswan.org/revoked.crl' ...
+libcurl request failed [7]: Failed to connect to nic.testing.libreswan.org XXX
+crl fetching failed
+certificate status is not available
+authentication of 'C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=east.testing.libreswan.org, E=user-east@testing.libreswan.org' with ML_DSA_65 successful
+IKE_SA westnet-eastnet-ikev2[1] established between 192.1.2.45[C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=west.testing.libreswan.org, E=user-west@testing.libreswan.org]...192.1.2.23[C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=east.testing.libreswan.org, E=user-east@testing.libreswan.org]
+scheduling reauthentication in XXXs
+maximum IKE_SA lifetime XXXs
+selected proposal: ESP:AES_GCM_16_256/NO_EXT_SEQ
+CHILD_SA westnet-eastnet-ikev2{1} established with SPIs SPISPI_i SPISPI_o and TS 192.0.1.0/24 === 192.0.2.0/24
+connection 'westnet-eastnet-ikev2' established successfully
+west #
+ ../../guestbin/ping-once.sh --up -I 192.0.1.254 192.0.2.254
+up
+west #
+ echo done
+done
+west #
+ if [ -f /var/run/pluto/pluto.pid ]; then ipsec _kernel state ; fi
+west #
+ if [ -f /var/run/pluto/pluto.pid ]; then ipsec _kernel policy ; fi
+west #
+ if [ -f /var/run/charon.pid -o -f /var/run/strongswan/charon.pid ]; then strongswan status ; fi
+Shunted Connections:
+Bypass LAN 192.0.1.0/24:  192.0.1.0/24 === 192.0.1.0/24 PASS
+Bypass LAN 192.1.2.0/24:  192.1.2.0/24 === 192.1.2.0/24 PASS
+Security Associations (1 up, 0 connecting):
+westnet-eastnet-ikev2[1]: ESTABLISHED XXX second ago, 192.1.2.45[C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=west.testing.libreswan.org, E=user-west@testing.libreswan.org]...192.1.2.23[C=CA, ST=Ontario, L=Toronto, O=Libreswan, OU=Test Department, CN=east.testing.libreswan.org, E=user-east@testing.libreswan.org]
+westnet-eastnet-ikev2{1}:  INSTALLED, TUNNEL, reqid 1, ESP SPIs: SPISPI_i SPISPI_o
+westnet-eastnet-ikev2{1}:   192.0.1.0/24 === 192.0.2.0/24
+west #

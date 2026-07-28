@@ -35,6 +35,11 @@ all:
 ifeq ($(USE_EDDSA),true)
 	$(PKI) root: real          mained   testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k ed
 endif
+ifeq ($(USE_MLDSA),true)
+	$(PKI) root: real          mainmldsa44  testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k mldsa -q ml-dsa-44
+	$(PKI) root: real          mainmldsa65  testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k mldsa -q ml-dsa-65
+	$(PKI) root: real          mainmldsa87  testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k mldsa -q ml-dsa-87
+endif
 	$(PKI) root: other         otherca  other.libreswan.org    Y  certSigning,crlSigning,critical  /  -k rsa -Z SHA256 -g 3072
 	: # broken root CA, ca not be used to verify
 	$(PKI) root: broken        bc-n-ca  testing.libreswan.org  n  /                                /  -k rsa -Z SHA256 -g 3072
@@ -47,6 +52,9 @@ endif
 	$(PKI) end: 'real fake' 'mainca mainec'  'east west road north rise set'      1 1 1 / digitalSignature  /
 ifeq ($(USE_EDDSA),true)
 	$(PKI) end: real        mained           'east west road north rise set'      1 1 1 / digitalSignature  /
+endif
+ifeq ($(USE_MLDSA),true)
+	$(PKI) end: real        'mainmldsa44 mainmldsa65 mainmldsa87'  'east west'    1 1 1 / digitalSignature  /
 endif
 	$(PKI) end: real        mainca           revoked                              1 1 1 / digitalSignature  /
 	$(PKI) end: real        mainca           key2032                              1 1 1 / digitalSignature  /  -k rsa -g 2032
