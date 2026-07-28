@@ -422,12 +422,15 @@ while read dirs cas domain is_ca ku eku param ; do
 
     # DIRs CAs DOMAIN IS_CA KU EKU=/ PARAM...
 done <<EOF
-{real,fake}   mainca   testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k rsa -Z SHA256 -g 3072
-{real,fake}   mainec   testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k ec  -Z SHA256 -q secp384r1
-#real          mained   testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k ed
-other         otherca  other.libreswan.org    Y  certSigning,crlSigning,critical  /  -k rsa -Z SHA256 -g 3072
+{real,fake}   mainca       testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k rsa   -Z SHA256 -g 3072
+{real,fake}   mainec       testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k ec    -Z SHA256 -q secp384r1
+#real          mained       testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k ed
+real          mainmldsa44  testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k mldsa -q ml-dsa-44
+real          mainmldsa65  testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k mldsa -q ml-dsa-65
+real          mainmldsa87  testing.libreswan.org  Y  certSigning,crlSigning,critical  /  -k mldsa -q ml-dsa-87
+other         otherca      other.libreswan.org    Y  certSigning,crlSigning,critical  /  -k rsa   -Z SHA256 -g 3072
 # broken root CA, can't be used to verify
-broken        bc-n-ca  testing.libreswan.org  n  /                                /  -k rsa -Z SHA256 -g 3072
+broken        bc-n-ca      testing.libreswan.org  n  /                                /  -k rsa   -Z SHA256 -g 3072
 EOF
 
 
@@ -526,6 +529,7 @@ done <<EOF
 {real,fake} {mainca,mainec}  nic                                  1 1 1 / digitalSignature  ocspResponder
 {real,fake} {mainca,mainec}  {east,west,road,north,rise,set}      1 1 1 / digitalSignature  /
 #real        mained           {east,west,road,north,rise,set}      1 1 1 / digitalSignature  /
+real        {mainmldsa44,mainmldsa65,mainmldsa87}  {east,west}    1 1 1 / digitalSignature  /
 real        mainca           revoked                              1 1 1 / digitalSignature  /
 real        mainca           key2032                              1 1 1 / digitalSignature  /  -k rsa -g 2032
 real        mainca           key4096                              1 1 1 / digitalSignature  /  -k rsa -g 4096

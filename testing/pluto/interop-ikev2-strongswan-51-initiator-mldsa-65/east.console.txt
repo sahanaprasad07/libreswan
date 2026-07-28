@@ -1,0 +1,60 @@
+/testing/guestbin/swan-prep --nokeys
+Initializing NSS database
+Relabeled /var/lib/ipsec/nss from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+Relabeled /var/lib/ipsec/nss/pkcs11.txt from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+Relabeled /var/lib/ipsec/nss/cert9.db from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+Relabeled /var/lib/ipsec/nss/key4.db from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+east #
+ /testing/x509/import.sh real/mainmldsa65/`hostname`.p12
+ ipsec pk12util -w nss-pw -i real/mainmldsa65/east.p12
+pk12util: PKCS12 IMPORT SUCCESSFUL
+ ipsec certutil -M -n mainmldsa65 -t CT,,
+ ipsec certutil -O -n east
+"mainmldsa65" [E=testing@libreswan.org,CN=Libreswan test CA for mainmldsa65,OU=Test Department,O=Libreswan,L=Toronto,ST=Ontario,C=CA]
+  "east" [E=user-east@testing.libreswan.org,CN=east.testing.libreswan.org,OU=Test Department,O=Libreswan,L=Toronto,ST=Ontario,C=CA]
+east #
+ ipsec start
+Redirecting to: [initsystem]
+east #
+ ../../guestbin/wait-until-pluto-started
+east #
+ ipsec auto --add westnet-eastnet-ikev2
+"westnet-eastnet-ikev2": added oriented IKEv2 connection
+east #
+ echo "initdone"
+initdone
+east #
+ if [ -f /var/run/pluto/pluto.pid ]; then ipsec _kernel state ; fi
+src 192.1.2.23 dst 192.1.2.45
+	proto esp spi 0xSPISPI reqid REQID mode tunnel
+	replay-window 0 flag af-unspec
+	aead rfc4106(gcm(aes)) 0xENCAUTHKEY 128
+	lastused YYYY-MM-DD HH:MM:SS
+	dir out
+src 192.1.2.45 dst 192.1.2.23
+	proto esp spi 0xSPISPI reqid REQID mode tunnel
+	replay-window 0 flag af-unspec
+	aead rfc4106(gcm(aes)) 0xENCAUTHKEY 128
+	lastused YYYY-MM-DD HH:MM:SS
+	anti-replay esn context:
+	 seq-hi 0x0, seq 0xXX, oseq-hi 0x0, oseq 0xXX
+	 replay_window 128, bitmap-length 4
+	 00000000 00000000 00000000 XXXXXXXX 
+	dir in
+east #
+ if [ -f /var/run/pluto/pluto.pid ]; then ipsec _kernel policy ; fi
+src 192.0.1.0/24 dst 192.0.2.0/24
+	dir fwd priority PRIORITY ptype main
+	tmpl src 192.1.2.45 dst 192.1.2.23
+		proto esp reqid REQID mode tunnel
+src 192.0.1.0/24 dst 192.0.2.0/24
+	dir in priority PRIORITY ptype main
+	tmpl src 192.1.2.45 dst 192.1.2.23
+		proto esp reqid REQID mode tunnel
+src 192.0.2.0/24 dst 192.0.1.0/24
+	dir out priority PRIORITY ptype main
+	tmpl src 192.1.2.23 dst 192.1.2.45
+		proto esp reqid REQID mode tunnel
+east #
+ if [ -f /var/run/charon.pid -o -f /var/run/strongswan/charon.pid ]; then strongswan status ; fi
+east #

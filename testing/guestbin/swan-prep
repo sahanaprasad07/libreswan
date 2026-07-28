@@ -443,6 +443,7 @@ match args.userland:
                           "swanctl/private",
                           "swanctl/rsa",
                           "swanctl/ecdsa",
+                          "swanctl/mldsa",
                           "swanctl/pkcs8",
                           "swanctl/pkcs12"):
             dst = os.path.join("/etc/strongswan", directory)
