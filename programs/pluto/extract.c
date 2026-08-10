@@ -1358,6 +1358,10 @@ static diag_t extract_authby(struct authby *authby,
 				authby->eddsa = true;
 				continue;
 			}
+			if (hunk_streq(val, "mldsa")) {
+				authby->mldsa = true;
+				continue;
+			}
 			if (hunk_streq(val, "ecdsa") ||
 			    hunk_streq(val, "ecdsa-sha2")) {
 				*authby = authby_or(*authby, (struct authby) {
