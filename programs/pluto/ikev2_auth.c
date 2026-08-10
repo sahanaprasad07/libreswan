@@ -27,6 +27,8 @@
 #include "crypt_hash.h"
 #include "crypt_prf.h"
 
+#include <keyhi.h>
+
 #include "defs.h"
 #include "ikev2_auth.h"
 #include "state.h"
@@ -301,6 +303,33 @@ struct authby local_v2_authby(struct ike_sa *ike)
 	vexpect(override || authby_has_any(configured_authby, negotiated_authby));
 	return negotiated_authby;
 }
+
+#ifdef USE_MLDSA
+/* Select the ML-DSA signer matching the local key's parameter set,
+ * read off SECKEYPublicKey.u.mldsa.paramSet. */
+static const struct pubkey_signer *select_mldsa_signer(struct ike_sa *ike)
+{
+	struct connection *c = ike->sa.st_connection;
+	const struct secret_pubkey_stuff *pks =
+		get_local_private_key(c, &pubkey_type_mldsa, ike->sa.logger);
+	if (pks != NULL && pks->content.public_key != NULL) {
+		SECKEYPublicKey *pub = pks->content.public_key;
+		PEXPECT(ike->sa.logger, pub->keyType == mldsaKey);
+		switch (pub->u.mldsa.paramSet) {
+		case SEC_OID_ML_DSA_44:
+			return &pubkey_signer_digsig_mldsa_44;
+		case SEC_OID_ML_DSA_65:
+			return &pubkey_signer_digsig_mldsa_65;
+		case SEC_OID_ML_DSA_87:
+			return &pubkey_signer_digsig_mldsa_87;
+		default:
+			break;
+		}
+	}
+	/* fallback to ML-DSA-65 */
+	return &pubkey_signer_digsig_mldsa_65;
+}
+#endif
 
 /*
  * Map the configuration's authby=... onto the IKEv2 AUTH message's
@@ -715,6 +744,11 @@ static diag_t verify_v2AUTH_and_log_using_pubkey(struct ike_sa *ike,
 						hash_algo, pubkey_signer,
 						signature_payload_name);
 	statetime_stop(&start, "%s()", __func__);
+	if (d == NULL) {
+		llog(RC_LOG, ike->sa.logger,
+		     "authenticated peer using hash algorithm %s and signature algorithm %s",
+		     hash_algo->common.fqn, pubkey_signer->name);
+	}
 	return d;
 }
 
@@ -1162,6 +1196,7 @@ struct authby proposed_v2AUTH(struct ike_sa *ike,
 			AUTHBY_RSASSA_BLOB,
 			AUTHBY_ECDSA,
 			AUTHBY_EDDSA,
+			AUTHBY_MLDSA,
 		};
 	default:
 	{

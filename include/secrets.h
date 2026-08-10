@@ -171,7 +171,7 @@ struct hash_signature {
 	 *
 	 * New code should just ask NSS for the signature length.
 	 */
-	uint8_t ptr[PMAX(BYTES_FOR_BITS(8192)+1/*RSA*/, BYTES_FOR_BITS(1056)/*ECDSA*/)];
+	uint8_t ptr[PMAX(PMAX(BYTES_FOR_BITS(8192)+1/*RSA*/, BYTES_FOR_BITS(1056)/*ECDSA*/), 4627/*ML-DSA-87*/)];
 };
 
 struct pubkey_type {
@@ -274,6 +274,7 @@ extern const struct pubkey_type *pubkey_types[]; /* NULL terminated */
 extern const struct pubkey_type pubkey_type_rsa;
 extern const struct pubkey_type pubkey_type_ecdsa;
 extern const struct pubkey_type pubkey_type_eddsa;
+extern const struct pubkey_type pubkey_type_mldsa;
 
 extern const struct pubkey_signer signer_pubkey_rsa_ikev1;		/* IKEv1 */
 
@@ -285,6 +286,10 @@ extern const struct pubkey_signer signer_pubkey_ecdsa_blob;		/* rfc7427 */
 
 extern const struct pubkey_signer signer_pubkey_rsassa_pss_blob;	/* rfc7427 */
 extern const struct pubkey_signer signer_pubkey_eddsa_ed25519_blob;	/* rfc7427+ */
+
+extern const struct pubkey_signer pubkey_signer_digsig_mldsa_44;	/* draft-ietf-ipsecme-ikev2-pqc-auth */
+extern const struct pubkey_signer pubkey_signer_digsig_mldsa_65;	/* draft-ietf-ipsecme-ikev2-pqc-auth */
+extern const struct pubkey_signer pubkey_signer_digsig_mldsa_87;	/* draft-ietf-ipsecme-ikev2-pqc-auth */
 
 const struct pubkey_type *pubkey_type_from_ipseckey_algorithm(enum ipseckey_algorithm_type alg);
 const struct pubkey_type *pubkey_type_from_SECKEYPublicKey(SECKEYPublicKey *public_key);
