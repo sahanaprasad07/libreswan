@@ -58,6 +58,30 @@
 
       <varlistentry>
 	<term>
+	  <option>mldsa</option>
+	</term>
+	<listitem>
+	  <para>
+	    ML-DSA post-quantum digital signature based authentication.
+	    The parameter set (ML-DSA-44, ML-DSA-65, or ML-DSA-87) is
+	    determined automatically from the certificate's public key;
+	    there is no separate <option>authby=</option> value per
+	    parameter set.  Requires an X.509 certificate
+	    (&leftcert;/&rightcert;); there is no raw public key
+	    equivalent of &lefteddsakey;.
+	  </para>
+	  <caution>
+	    <para>
+	      This option is experimental, and requires &Libreswan; to
+	      be built with <option>USE_MLDSA=true</option> and NSS
+	      with ML-DSA support.
+	    </para>
+	  </caution>
+	</listitem>
+      </varlistentry>
+
+      <varlistentry>
+	<term>
 	  <option>rsa</option>
 	</term>
 	<term>
