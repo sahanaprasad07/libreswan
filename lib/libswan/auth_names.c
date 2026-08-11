@@ -29,6 +29,7 @@ static const char *const auth_name[] = {
 	S(AUTH_ECDSA_SHA2_512_BLOB),
 	S(AUTH_ECDSA_SHA2_512_RAW),
 	S(AUTH_EDDSA_ED25519),
+	S(AUTH_MLDSA),
 	S(AUTH_NEVER),
 	S(AUTH_NULL),
 	S(AUTH_PSK),

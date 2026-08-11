@@ -97,6 +97,7 @@ struct authby authby_and_hash(struct authby authby,
 		/* only allow algs that don't need a hash */
 		return authby_and(authby, (struct authby) {
 				AUTHBY_EDDSA,
+				AUTHBY_MLDSA,
 			});
 	}
 	return (struct authby) {0};
@@ -187,6 +188,12 @@ static const struct authby_name {
 	 */
 
 	{ "EDDSA", "eddsa", { AUTHBY_EDDSA, }, },
+
+	/*
+	 * MLDSA
+	 */
+
+	{ "MLDSA", "mldsa", { AUTHBY_MLDSA, }, },
 
 	/* stragglers */
 
@@ -391,6 +398,9 @@ struct authby authby_v2AUTH_digsig_payload(void)
 #ifdef USE_EDDSA
 		AUTHBY_EDDSA,
 #endif
+#ifdef USE_MLDSA
+		AUTHBY_MLDSA,
+#endif
 		AUTHBY_RSASSA_BLOB,
 		AUTHBY_ECDSA_BLOB,
 	};
@@ -406,6 +416,9 @@ struct authby authby_v2AUTH_pubkey(void)
 	return (struct authby) {
 #ifdef USE_EDDSA
 		AUTHBY_EDDSA,
+#endif
+#ifdef USE_MLDSA
+		AUTHBY_MLDSA,
 #endif
 		AUTHBY_RSASSA,
 		AUTHBY_ECDSA,
