@@ -45,6 +45,10 @@ struct authby {
 #define AUTHBY_EDDSA				\
 	.eddsa = true
 
+	bool mldsa;
+#define AUTHBY_MLDSA				\
+	.mldsa = true
+
 	/* XXX: should be IKEv1 only */
 	bool rsasig;
 #define AUTHBY_RSASIG_RAW			\
@@ -105,6 +109,7 @@ struct authby {
 	.never = true,				\
 	.authby_eaponly = true,			\
 	AUTHBY_EDDSA,				\
+	AUTHBY_MLDSA,				\
 	AUTHBY_RSASIG_V1_5,			\
 	AUTHBY_RSASIG_SHA2,			\
 	AUTHBY_ECDSA_SHA2
@@ -133,7 +138,8 @@ bool authby_has_supported_ikev2_digsig_payload(struct authby);
 	AUTHBY_RSASIG_V1_5,			\
 	AUTHBY_RSASIG_SHA2,			\
 	AUTHBY_ECDSA_SHA2,			\
-	AUTHBY_EDDSA
+	AUTHBY_EDDSA,				\
+	AUTHBY_MLDSA
 
 struct authby authby_xor(struct authby lhs, struct authby rhs);
 struct authby authby_and(struct authby lhs, struct authby rhs);
@@ -174,7 +180,7 @@ enum auth auth_from_authby(struct authby authby);
 struct authby authby_from_auth(enum auth auth);
 
 typedef struct {
-	char buf[sizeof("PSK+RSASIG+ECDSA+EDDSA+AUTH_NEVER+AUTH_NULL+"
+	char buf[sizeof("PSK+RSASIG+ECDSA+EDDSA+MLDSA+AUTH_NEVER+AUTH_NULL+EAPONLY+"
 		"RSASIG_v1_5+RSASIG_SHA2_256+RSASIG_SHA2_384+RSASIG_SHA2_512+"
 		"ECDSA_SHA2_256+ECDSA_SHA2_384+ECDSA_SHA2_512") + 1/*canary*/];
 } authby_buf;

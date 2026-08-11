@@ -33,6 +33,7 @@
 	 (TYPE)(LHS).psk OP			\
 	 (TYPE)(LHS).authby_eaponly OP		\
 	 (TYPE)(LHS).eddsa OP			\
+	 (TYPE)(LHS).mldsa OP			\
 	 (TYPE)(LHS).rsasig OP			\
 	 (TYPE)(LHS).rsasig_v1_5_sha1 OP	\
 	 REDUCE_SHA2(TYPE, LHS, OP, rsasig_v1_5) OP \
@@ -52,6 +53,7 @@
 		.authby_eaponly = (LHS).authby_eaponly OP (RHS).authby_eaponly,	\
 		.rsasig = (LHS).rsasig OP (RHS).rsasig,		\
 		.eddsa = (LHS).eddsa OP (RHS).eddsa,		\
+		.mldsa = (LHS).mldsa OP (RHS).mldsa,		\
 		.rsasig_v1_5_sha1 = (LHS).rsasig_v1_5_sha1 OP (RHS).rsasig_v1_5_sha1, \
 		OP_SHA2(LHS, OP, RHS, rsasig_v1_5),		\
 		OP_SHA2(LHS, OP, RHS, rsasig),			\
@@ -191,6 +193,9 @@ enum auth auth_from_authby(struct authby authby)
 				AUTHBY_EDDSA,
 			}) ? AUTH_EDDSA :
 		authby_has_any(authby, (struct authby) {
+				AUTHBY_MLDSA,
+			}) ? AUTH_MLDSA :
+		authby_has_any(authby, (struct authby) {
 				AUTHBY_RSASIG_V1_5,
 			}) ? AUTH_RSASIG :
 		authby.psk ? AUTH_PSK :
@@ -211,6 +216,7 @@ struct authby authby_from_auth(enum auth auth)
 			AUTHBY_ECDSA_SHA2,
 		};
 	case AUTH_EDDSA: return (struct authby) { .eddsa = true, };
+	case AUTH_MLDSA: return (struct authby) { .mldsa = true, };
 	case AUTH_RSASIG: return (struct authby) {
 			AUTHBY_RSASIG_RAW,
 			AUTHBY_RSASIG_V1_5,
@@ -302,6 +308,7 @@ size_t jam_authby(struct jambuf *buf, struct authby authby)
 		JAM_AUTHBY(ecdsa_sha2_512, ECDSA_SHA2_512);
 	}
 	JAM_AUTHBY(eddsa, EDDSA);
+	JAM_AUTHBY(mldsa, MLDSA);
 	JAM_AUTHBY(never, AUTH_NEVER);
 	JAM_AUTHBY(null, AUTH_NULL);
 	JAM_AUTHBY(authby_eaponly, EAPONLY);
