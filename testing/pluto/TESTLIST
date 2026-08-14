@@ -1513,6 +1513,7 @@ kvmplutotest	whack-oppo-01-opporeqid			good
 kvmplutotest	whack-hostkey-01-ckaid-rsa		good
 kvmplutotest	whack-hostkey-01-ckaid-ecdsa		good
 kvmplutotest	whack-hostkey-01-ckaid-eddsa		good	github/2474
+kvmplutotest	whack-hostkey-01-ckaid-mldsa		good
 
 kvmplutotest	whack-hostkey-02-ckaid-fips		good
 kvmplutotest	whack-hostkey-03-ckaid-nsspw		good
