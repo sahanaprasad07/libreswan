@@ -109,6 +109,7 @@
 <!ENTITY ipsec-listcrls.8 '<citerefentry><refentrytitle>ipsec-listcrls</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>
 <!ENTITY ipsec-listen.8 '<citerefentry><refentrytitle>ipsec-listen</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>
 <!ENTITY ipsec-listpubkeys.8 '<citerefentry><refentrytitle>ipsec-listpubkeys</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>
+<!ENTITY ipsec-mldsasigkey.8 '<citerefentry><refentrytitle>ipsec-mldsasigkey</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>
 <!ENTITY ipsec-modutil.8 '<citerefentry><refentrytitle>ipsec-modutil</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>
 <!ENTITY ipsec-newhostkey.8 '<citerefentry><refentrytitle>ipsec-newhostkey</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>
 <!ENTITY ipsec-ondemand.8 '<citerefentry><refentrytitle>ipsec-ondemand</refentrytitle><manvolnum>8</manvolnum></citerefentry>'>

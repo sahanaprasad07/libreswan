@@ -55,6 +55,22 @@ static err_t MLDSA_extract_pubkey_content_from_SECKEYPublicKey(struct pubkey_con
 	return NULL;
 }
 
+static diag_t MLDSA_extract_pubkey_content_from_ipseckey(shunk_t ipseckey UNUSED,
+							 struct pubkey_content *pkc UNUSED,
+							 const struct logger *logger UNUSED)
+{
+	return diag("ML-DSA does not support the IPSECKEY/raw public key format; use an X.509 certificate");
+}
+
+static err_t MLDSA_pubkey_content_to_ipseckey(const struct pubkey_content *pkc UNUSED,
+					      chunk_t *ipseckey,
+					      enum ipseckey_algorithm_type *ipseckey_algorithm)
+{
+	*ipseckey = EMPTY_CHUNK;
+	*ipseckey_algorithm = 0;
+	return "ML-DSA does not support the IPSECKEY/raw public key format; use an X.509 certificate";
+}
+
 static bool MLDSA_pubkey_same(const struct pubkey_content *lhs,
 			      const struct pubkey_content *rhs,
 			      const struct logger *logger UNUSED)
@@ -78,6 +94,8 @@ const struct pubkey_type pubkey_type_mldsa = {
 	.private_key_kind = SECRET_MLDSA,
 	.ipseckey_algorithm = IPSECKEY_ALGORITHM_X_PUBKEY,
 	.free_pubkey_content = MLDSA_free_pubkey_content,
+	.extract_pubkey_content_from_ipseckey = MLDSA_extract_pubkey_content_from_ipseckey,
+	.pubkey_content_to_ipseckey = MLDSA_pubkey_content_to_ipseckey,
 	.extract_pubkey_content_from_SECKEYPublicKey = MLDSA_extract_pubkey_content_from_SECKEYPublicKey,
 	.pubkey_same = MLDSA_pubkey_same,
 	.strength_in_bits = MLDSA_strength_in_bits,

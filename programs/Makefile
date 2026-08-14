@@ -44,6 +44,10 @@ ifeq ($(USE_EDDSA),true)
 SUBDIRS += eddsasigkey
 endif
 
+ifeq ($(USE_MLDSA),true)
+SUBDIRS += mldsasigkey
+endif
+
 SUBDIRS += rsasigkey
 
 SUBDIRS += showhostkey

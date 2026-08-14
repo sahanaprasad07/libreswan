@@ -293,11 +293,12 @@
 	<term><command>ipsec ecdsasigkey</command></term>
 	<term><command>ipsec eddsasigkey</command></term>
 	<term><command>ipsec rsasigkey</command></term>
+	<term><command>ipsec mldsasigkey</command></term>
 	<listitem>
 	  <para>
 	    Generate and display raw host keys stored in the
-	    &NSS; database. <command>ipsec eddsasigkey</command> is not built
-	    by default.
+	    &NSS; database. <command>ipsec eddsasigkey</command> and
+	    <command>ipsec mldsasigkey</command> are not built by default.
 	  </para>
 	  <para>
 	    See:
@@ -305,7 +306,8 @@
 	    &ipsec-newhostkey.8;,
 	    &ipsec-ecdsasigkey.8;,
 	    &ipsec-eddsasigkey.8;,
-	    &ipsec-rsasigkey.8;.
+	    &ipsec-rsasigkey.8;,
+	    &ipsec-mldsasigkey.8;.
 	  </para>
 	</listitem>
       </varlistentry>
@@ -417,6 +419,7 @@
       &ipsec-listcrls.8;,
       &ipsec-listen.8;,
       &ipsec-listpubkeys.8;,
+      &ipsec-mldsasigkey.8;,
       &ipsec-modutil.8;,
       &ipsec-newhostkey.8;,
       &ipsec-ondemand.8;,
