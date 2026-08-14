@@ -1,0 +1,42 @@
+/testing/guestbin/swan-prep --nokeys
+Initializing NSS database
+Relabeled /var/lib/ipsec/nss from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+Relabeled /var/lib/ipsec/nss/pkcs11.txt from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+Relabeled /var/lib/ipsec/nss/cert9.db from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+Relabeled /var/lib/ipsec/nss/key4.db from unconfined_u:object_r:virt_home_t:s0 to unconfined_u:object_r:ipsec_key_file_t:s0
+west #
+ rm -f /tmp/newhostkey.txt
+west #
+ ckaid=$(ipsec newhostkey --keytype mldsa 2>&1 | grep "showhostkey" | sed "s/^.*ckaid //")
+west #
+ # sanitizing brought to you by id-sanitize.sed
+west #
+ ipsec showhostkey --list
+< 1> MLDSA keyid: <<KEYID#1>> ckaid: <<CKAID#1>>
+west #
+ ipsec showhostkey --dump
+< 1> MLDSA keyid: <<KEYID#1>> ckaid: <<CKAID#1>>
+west #
+ ipsec showhostkey --left --ckaid "${ckaid}"
+ipsec showhostkey: ML-DSA does not support the IPSECKEY/raw public key format; use an X.509 certificate
+west #
+ ipsec showhostkey --left --pubkey --ckaid "${ckaid}"
+	# left keyid: <<KEYID#1>>
+	leftpubkey=<<PEM-PUBKEY#1>>
+west #
+ ipsec showhostkey --ipseckey --ckaid "${ckaid}"
+ipsec showhostkey: ML-DSA does not support the IPSECKEY/raw public key format; use an X.509 certificate
+west #
+ ipsec showhostkey --ipseckey --pubkey --ckaid "${ckaid}"
+west.    IN    IPSECKEY  10 0 5 . <<PEM-PUBKEY#1>>
+west #
+ # see description.txt for why they are different
+west #
+ ipsec showhostkey --pem --ckaid "${ckaid}"
+-----BEGIN PUBLIC KEY-----
+-----END PUBLIC KEY-----
+west #
+ ipsec showhostkey --pem --ckaid "${ckaid}" | openssl pkey -inform PEM -pubin
+-----BEGIN PUBLIC KEY-----
+-----END PUBLIC KEY-----
+west #
