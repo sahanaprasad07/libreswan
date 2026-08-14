@@ -24,12 +24,14 @@ usage="Usage:
 	$me [--seeddev device] [--keytype rsa] [--bits n]
 	$me [--seeddev device] --keytype ecdsa [--curve curve]
 	$me [--seeddev device] --keytype eddsa [--curve curve]
+	$me [--seeddev device] --keytype mldsa [--paramset paramset]
 
 	other options: [--quiet] [--hostname host] [--nssdir @@IPSEC_NSSDIR@@] \\
 		[--password password]"
 
 bits=
 curve=
+paramset=
 keytype=rsa
 verbose=
 host=
@@ -44,6 +46,10 @@ while [ $# != 0 ] ; do
 	    ;;
 	--curve)
 	    curve="${2}"
+	    shift
+	    ;;
+	--paramset)
+	    paramset="${2}"
 	    shift
 	    ;;
 	--keytype)
@@ -95,17 +101,27 @@ if [ -n "$bits" ] && [ -n "$curve" ]; then
     echo "${me}: --bits and --curve are mutually exclusive" >&2
     exit 2
 fi
+if [ -n "$paramset" ] && { [ -n "$bits" ] || [ -n "$curve" ]; }; then
+    echo "${me}: --paramset and --bits/--curve are mutually exclusive" >&2
+    exit 2
+fi
 
 case "$keytype" in
     rsa)
-	if [ -n "$curve" ]; then
-	    echo "${me}: --curve and --keytype rsa are mutually exclusive" >&2
+	if [ -n "$curve" ] || [ -n "$paramset" ]; then
+	    echo "${me}: --curve/--paramset and --keytype rsa are mutually exclusive" >&2
 	    exit 2
 	fi
 	;;
     ecdsa|eddsa)
-	if [ -n "$bits" ]; then
-	    echo "${me}: --bits and --keytype ${keytype} are mutually exclusive" >&2
+	if [ -n "$bits" ] || [ -n "$paramset" ]; then
+	    echo "${me}: --bits/--paramset and --keytype ${keytype} are mutually exclusive" >&2
+	    exit 2
+	fi
+	;;
+    mldsa)
+	if [ -n "$bits" ] || [ -n "$curve" ]; then
+	    echo "${me}: --bits/--curve and --keytype mldsa are mutually exclusive" >&2
 	    exit 2
 	fi
 	;;
@@ -134,6 +150,9 @@ case "$keytype" in
 	;;
     ecdsa|eddsa)
 	key=$(ipsec ${keytype}sigkey ${verbose} ${seeddev} --nssdir ${nssdir} ${password} ${host} ${curve})
+	;;
+    mldsa)
+	key=$(ipsec mldsasigkey ${verbose} ${seeddev} --nssdir ${nssdir} ${password} ${host} ${paramset})
 	;;
 esac
 

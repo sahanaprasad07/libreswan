@@ -28,7 +28,8 @@
       <sbr/>
       <arg choice='opt'>--bits <replaceable>bits</replaceable></arg>
       <arg choice='opt'>--curve <replaceable>curve</replaceable></arg>
-      <arg choice='opt'>--keytype <replaceable>rsa|ecdsa</replaceable></arg>
+      <arg choice='opt'>--paramset <replaceable>paramset</replaceable></arg>
+      <arg choice='opt'>--keytype <replaceable>rsa|ecdsa|mldsa</replaceable></arg>
     </cmdsynopsis>
   </refsynopsisdiv>
 
@@ -118,13 +119,29 @@
 
 	<varlistentry>
 	  <term>
-	    <option>--keytype <replaceable>rsa|ecdsa</replaceable></option>
+	    <option>--paramset <replaceable>paramset</replaceable></option>
+	  </term>
+	  <listitem>
+	    <para>
+	      The <option>--paramset</option> option specifies the ML-DSA
+	      parameter set used in the key; the current default is
+	      ml-dsa-65. See &ipsec-mldsasigkey.8;
+	      for the available parameter set names.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term>
+	    <option>--keytype <replaceable>rsa|ecdsa|mldsa</replaceable></option>
 	  </term>
 	  <listitem>
 	    <para>
 	      The <option>--keytype</option> option specifies the type of key,
-	      which can either be <emphasis>rsa</emphasis> (RSA)
-	      or <emphasis>ecdsa</emphasis> (ECDSA);
+	      which can be <emphasis>rsa</emphasis> (RSA),
+	      <emphasis>ecdsa</emphasis> (ECDSA), or
+	      <emphasis>mldsa</emphasis> (ML-DSA, only when built with
+	      <option>USE_MLDSA=true</option>);
 	      if omitted the current default is <emphasis>rsa</emphasis>.
 	    </para>
 	  </listitem>
@@ -155,6 +172,8 @@
     <title>SEE ALSO</title>
     <para>
       &ipsec-rsasigkey.8;,
+      &ipsec-ecdsasigkey.8;,
+      &ipsec-mldsasigkey.8;,
       &ipsec-showhostkey.8;,
       &ipsec.secrets.5;
     </para>
