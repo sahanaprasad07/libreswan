@@ -803,7 +803,6 @@ diag_t verify_v2AUTH_and_log(enum ikev2_auth_method recv_auth,
 		 * For all signers that match the peer's allowed
 		 * authby, try the signer's hashes blobs.
 		 */
-
 		FOR_EACH_ITEM(sp, &pubkey_blob_signers) {
 			const struct pubkey_signer *signer = (*sp);
 

@@ -187,6 +187,34 @@ bool emit_v2N_SUPPORTED_AUTH_METHODS(const struct ike_sa *ike,
 			.blob = DIGITAL_SIGNATURE_EDDSA_IDENTITY_ED448_BLOB,
 		},
 #endif
+
+#ifdef USE_MLDSA
+		[AUTH_MLDSA_44] = {
+			.kind = MULTI_OCTET,
+			.story = "ML-DSA-44",
+			.method = IKEv2_AUTH_DIGITAL_SIGNATURE,
+			.hash = &ike_alg_hash_identity,
+			.blob = DIGITAL_SIGNATURE_MLDSA_IDENTITY_44_BLOB,
+		},
+		[AUTH_MLDSA_65] = {
+			.kind = MULTI_OCTET,
+			.story = "ML-DSA-65",
+			.method = IKEv2_AUTH_DIGITAL_SIGNATURE,
+			.hash = &ike_alg_hash_identity,
+			.blob = DIGITAL_SIGNATURE_MLDSA_IDENTITY_65_BLOB,
+		},
+		[AUTH_MLDSA_87] = {
+			.kind = MULTI_OCTET,
+			.story = "ML-DSA-87",
+			.method = IKEv2_AUTH_DIGITAL_SIGNATURE,
+			.hash = &ike_alg_hash_identity,
+			.blob = DIGITAL_SIGNATURE_MLDSA_IDENTITY_87_BLOB,
+		},
+#else
+		[AUTH_MLDSA_44].kind = NO_OCTET,
+		[AUTH_MLDSA_65].kind = NO_OCTET,
+		[AUTH_MLDSA_87].kind = NO_OCTET,
+#endif
 	};
 
 	/*
@@ -430,6 +458,15 @@ bool process_v2N_SUPPORTED_AUTH_METHODS(struct ike_sa *ike,
 #if 0
 			MATCH_DIGSIG(AUTH_EDDSA_ED448, &ike_alg_hash_identity,
 				     DIGITAL_SIGNATURE_EDDSA_IDENTITY_ED448_BLOB);
+#endif
+
+#ifdef USE_MLDSA
+			MATCH_DIGSIG(AUTH_MLDSA_44, &ike_alg_hash_identity,
+				     DIGITAL_SIGNATURE_MLDSA_IDENTITY_44_BLOB);
+			MATCH_DIGSIG(AUTH_MLDSA_65, &ike_alg_hash_identity,
+				     DIGITAL_SIGNATURE_MLDSA_IDENTITY_65_BLOB);
+			MATCH_DIGSIG(AUTH_MLDSA_87, &ike_alg_hash_identity,
+				     DIGITAL_SIGNATURE_MLDSA_IDENTITY_87_BLOB);
 #endif
 #undef MATCH_DIGSIG
 		} else {

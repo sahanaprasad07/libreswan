@@ -390,6 +390,9 @@ struct connection *find_v2_unsecured_host_pair_connection(const struct msg_diges
 	static const struct authby remote_authbys[] = {
 		{ AUTHBY_ECDSA, },
 		{ AUTHBY_EDDSA, },
+#ifdef USE_MLDSA
+		{ AUTHBY_MLDSA, },
+#endif
 		{ AUTHBY_RSASSA_PSS_BLOB, }, /* prefer new */
 		{ AUTHBY_RSASSA, }, /* catch-all*/
 		{ AUTHBY_PSK, },

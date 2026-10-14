@@ -2029,6 +2029,7 @@ static diag_t extract_host_end(enum end end,
 					AUTHBY_RSASSA,
 					AUTHBY_ECDSA,
 					AUTHBY_EDDSA,
+					AUTHBY_MLDSA,
 				})) {
 
 			struct authby conflicts;
