@@ -21,6 +21,9 @@ static const struct pubkey_signer *pubkey_blob_signer[] = {
 	&signer_pubkey_ecdsa_blob,
 	&signer_pubkey_eddsa_ed25519_blob,
 	&signer_pubkey_rsassa_pkcs1_1_5_blob,
+#ifdef USE_MLDSA
+	&signer_pubkey_mldsa_blob,
+#endif
 };
 
 const struct pubkey_signers pubkey_blob_signers = {

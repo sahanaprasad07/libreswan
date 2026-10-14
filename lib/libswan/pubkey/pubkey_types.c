@@ -19,6 +19,9 @@ static const struct pubkey_type *pubkey_type[] = {
 	&pubkey_type_rsa,
 	&pubkey_type_ecdsa,
 	&pubkey_type_eddsa,
+#ifdef USE_MLDSA
+	&pubkey_type_mldsa,
+#endif
 };
 
 const struct pubkey_type *pubkey_type_from_ipseckey_algorithm(enum ipseckey_algorithm_type algorithm)

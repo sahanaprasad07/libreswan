@@ -171,7 +171,7 @@ struct hash_signature {
 	 *
 	 * New code should just ask NSS for the signature length.
 	 */
-	uint8_t ptr[PMAX(BYTES_FOR_BITS(8192)+1/*RSA*/, BYTES_FOR_BITS(1056)/*ECDSA*/)];
+	uint8_t ptr[PMAX(PMAX(BYTES_FOR_BITS(8192)+1/*RSA*/, BYTES_FOR_BITS(1056)/*ECDSA*/), 4627/*ML-DSA-87*/)];
 };
 
 struct pubkey_type {
@@ -302,6 +302,8 @@ extern const struct pubkey_signer signer_pubkey_ecdsa_blob;		/* rfc7427 */
 extern const struct pubkey_signer signer_pubkey_rsassa_pss_blob;	/* rfc7427 */
 extern const struct pubkey_signer signer_pubkey_eddsa_ed25519_blob;	/* rfc7427+ */
 
+extern const struct pubkey_signer signer_pubkey_mldsa_blob;		/* draft-ietf-ipsecme-ikev2-pqc-auth */
+
 extern const struct pubkey_signers {
 	unsigned len;
 	const struct pubkey_signer *const *list COUNTED_BY_PTR(len);
@@ -313,6 +315,7 @@ const struct pubkey_type *pubkey_type_from_SECKEYPublicKey(SECKEYPublicKey *publ
 extern const struct pubkey_type pubkey_type_rsa;
 extern const struct pubkey_type pubkey_type_ecdsa;
 extern const struct pubkey_type pubkey_type_eddsa;
+extern const struct pubkey_type pubkey_type_mldsa;
 
 /*
  * Public Key Machinery.
